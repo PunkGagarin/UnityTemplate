@@ -6,12 +6,13 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Jam/_Scenes/MainMenu.unity
+    path: Assets/_Project/_Scenes/Bootstrap.unity
+    guid: b8be3d2e8d4f5cd49b20edcf31a6ffd9
+  - enabled: 1
+    path: Assets/_Project/_Scenes/MainMenu.unity
     guid: 6af15ccedaba574419dbb92004c4a21e
   - enabled: 1
-    path: Assets/Jam/_Scenes/Loading.unity
-    guid: 10feaab46d2ad9f499b23878c533998f
-  - enabled: 1
-    path: Assets/Jam/_Scenes/Gameplay.unity
+    path: Assets/_Project/_Scenes/Gameplay.unity
     guid: ba182d6da30eb5840ab90b382613116d
   m_configObjects: {}
+  m_UseUCBPForAssetBundles: 0

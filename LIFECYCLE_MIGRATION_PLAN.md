@@ -1,217 +1,170 @@
-﻿﻿﻿﻿# Lifecycle Migration Plan
+﻿# Lifecycle Migration Plan
 
-Цель: развить `UnityTemplate` так, чтобы реальный игровой цикл не уезжал внутрь
-сцены, `MonoBehaviour`, `IInitializable` или `ITickable`, как это постепенно
-произошло в `IgnisBearer`.
+Цель: переложить в `UnityTemplate` lifecycle-подход из `ecs-survivors`, не
+перенося ECS, generated code, `Feature`-слой и прочие детали реализации.
 
-Сейчас принцип формулируем максимально просто:
+## Reference-Locked Правило
 
-```text
-DI creates and wires objects.
-Scene provides references and local dependencies.
-External game state machine owns lifecycle.
-States execute Enter / Tick / Exit directly.
-UI requests transitions, but does not load scenes directly.
-```
+Этот документ locked на `ecs-survivors` как lifecycle-референс.
 
-На этом этапе не вводим дополнительную сущность между `GameplayState` и игровыми
-сервисами. Если позже `GameplayState` станет слишком большим, вынесем часть
-реализации в helper или service. Но базовая парадигма должна быть очевидной:
-lifecycle делает сам state.
+Перед изменением плана нужно сначала найти соответствующий класс/паттерн в
+`ecs-survivors` и перенести именно его смысл, без дополнительных прослоек.
 
-## Проблема
-
-В текущем шаблоне есть внешний `GameStateMachine`, но `GameplayState` пока пустой.
-Если развивать проект естественным образом, есть риск прийти к модели
-`IgnisBearer`:
+Если паттерна нет в `ecs-survivors`, он не должен попадать в этот документ как
+рекомендация. Его можно вынести только как отдельное предложение и сначала
+явно обсудить.
 
 ```text
-LoadGameplayState
--> load Gameplay scene
--> scene installers create GameplayBootstrap
--> GameplayBootstrap.Initialize() starts game
--> services and MonoBehaviours tick themselves
--> UI directly calls SceneLoader.ReloadScene() / LoadScene(MainMenu)
+Берем только то, что реально есть в ecs-survivors.
+Не добавляем новые архитектурные прослойки заранее.
+Если в ecs-survivors UI дергает state machine напрямую, в плане пишем так же.
+Если в ecs-survivors scene references идут через конкретные initializers/providers,
+в плане пишем так же.
 ```
 
-В такой модели внешний state machine остается формальным навигатором, но уже не
-является владельцем игрового режима.
+## Что Именно Берем Из ecs-survivors
 
-Нужная модель:
+### 1. UI не грузит сцены, но может дергать state machine
+
+В `ecs-survivors` UI-компоненты сами подписываются на кнопки и напрямую вызывают
+`IGameStateMachine`.
+
+Пример flow:
 
 ```text
-LoadGameplayState
--> load Gameplay scene
--> scene dependencies become available
--> GameplayEnterState
--> GameplayState
--> GameplayPauseState / GameOverOrParagonState / LoadMainMenuState
+HomeHUD.StartBattleButton
+-> HomeHUD.EnterBattleLoadingState()
+-> stateMachine.Enter<LoadingBattleState, string>(BattleSceneName)
+-> LoadingBattleState loads scene
 ```
 
-## Главное Решение
+То есть правило не такое:
 
-States должны делать lifecycle напрямую:
+```text
+UI -> additional application layer -> StateMachine
+```
+
+А такое:
+
+```text
+UI -> StateMachine -> State -> SceneLoader
+```
+
+Главная граница: UI не вызывает `SceneLoader.LoadScene(...)` напрямую.
+
+### 2. Loading state владеет загрузкой сцены
+
+В `ecs-survivors` scene loading находится в отдельном state.
+
+Паттерн:
+
+```text
+LoadingBattleState.Enter(sceneName)
+-> sceneLoader.LoadScene(sceneName, callback)
+-> callback enters BattleEnterState
+```
+
+Для нашего template:
+
+```text
+LoadGameplayState.Enter()
+-> loadingCurtain.Show()
+-> sceneLoader.LoadScene(SceneEnum.Gameplay)
+-> loadingCurtain.Hide()
+-> stateMachine.Enter<GameplayEnterState>()
+```
+
+### 3. Enter state готовит режим
+
+В `ecs-survivors` после загрузки battle scene отдельный state делает подготовку
+перед активным loop.
+
+Паттерн:
+
+```text
+BattleEnterState.Enter()
+-> create hero at LevelDataProvider.StartPoint
+-> stateMachine.Enter<BattleLoopState>()
+```
+
+Для нашего template:
 
 ```text
 GameplayEnterState.Enter()
--> подготовить игровую сессию
--> создать/инициализировать level data, player, services, UI state
--> перейти в GameplayState
+-> подготовить игровую сессию обычными сервисами/фабриками
+-> stateMachine.Enter<GameplayState>()
+```
 
+Не вводим отдельного промежуточного владельца gameplay lifecycle. Подготовку
+делает сам state.
+
+### 4. Active state владеет update-loop
+
+В `ecs-survivors` `GameStateMachine` является `ITickable` и тикает только
+активный state, если он реализует update-интерфейс.
+
+Паттерн:
+
+```text
+GameStateMachine.Tick()
+-> if activeState is IUpdateable
+-> activeState.Update()
+```
+
+Для нашего template:
+
+```text
+GameStateMachine : ITickable
+-> ticks current state
+
+GameplayState : IState, IGameState, IUpdateable
+-> Enter()
+-> Update()
+-> Exit()
+```
+
+Не переносим ECS/Features. Внутри `GameplayState.Update()` вызываем обычные
+сервисы нашего проекта, если они нужны.
+
+### 5. Active state владеет cleanup
+
+В `ecs-survivors` долгоживущие states не просто запускаются, а еще явно чистят
+режим при выходе.
+
+Паттерн:
+
+```text
+ActiveState.Enter()
+-> start mode
+
+ActiveState.Update()
+-> tick mode
+
+ActiveState.ExitOnEndOfFrame()
+-> cleanup mode
+```
+
+Для нашего template:
+
+```text
 GameplayState.Enter()
--> включить активный gameplay
+-> включить активную игру
 
-GameplayState.Tick()
--> выполнить активный игровой цикл
--> обработать pause / game over / win requests
+GameplayState.Update()
+-> тик активной игры
 
 GameplayState.Exit()
--> остановить активный gameplay
--> отписаться, сохранить, почистить состояние, если нужно
+-> остановить/почистить активную игру
 ```
 
-DI при этом не исчезает. Он просто не владеет жизненным циклом. Он поставляет
-states нужные сервисы, фабрики и scene references.
+На первом шаге можно оставить обычный `Exit()`. Отложенный выход в конце кадра
+можно добавить отдельно, когда появятся реальные гонки между update и переходом.
 
-## Целевая Схема States
+### 6. Scene references идут через конкретные initializers/providers
 
-```text
-BootstrapState
--> LoadMainMenuState
--> MainMenuState
--> LoadGameplayState
--> GameplayEnterState
--> GameplayState
--> GameplayPauseState
--> GameOverOrParagonState
-```
+В `ecs-survivors` нет общего контейнера scene references.
 
-Минимально можно оставить `MainMenuState` как сейчас, но для симметрии лучше
-разделить загрузку меню и активное состояние меню.
-
-## Границы Ответственности
-
-### GameStateMachine
-
-Отвечает за:
-
-- регистрацию states;
-- текущий активный state;
-- вызов `Enter`;
-- вызов `Exit`;
-- вызов `Tick` у активного state, если он updateable;
-- защиту от двойных transitions.
-
-Не отвечает за:
-
-- создание конкретного уровня;
-- логику UI;
-- сохранение игрового результата;
-- детали gameplay-систем.
-
-### States
-
-Отвечают за lifecycle major modes:
-
-- загрузить нужную сцену;
-- войти в режим;
-- каждый кадр обновлять режим;
-- поставить режим на паузу;
-- завершить режим;
-- перейти в следующий major mode.
-
-Именно states должны отвечать на вопрос:
-
-```text
-Когда игра началась?
-Когда игра тикает?
-Когда игра остановлена?
-Когда можно грузить следующую сцену?
-```
-
-### DI / Installers
-
-Отвечают за composition:
-
-- bind global services в `ProjectContext`;
-- bind scene services в `SceneContext`;
-- bind factories;
-- bind UI references;
-- bind level data;
-- bind scene reference holders.
-
-Не отвечают за major-mode lifecycle.
-
-`IInitializable` можно использовать для локальной подготовки, но не для старта
-игрового режима.
-
-Хорошо:
-
-```text
-cache references
-subscribe local UI
-register scene references
-prepare service defaults
-```
-
-Плохо:
-
-```text
-start gameplay
-start win/loss loop
-load another scene
-restart game
-enter main menu
-```
-
-### Scene
-
-Сцена предоставляет объекты:
-
-- cameras;
-- UI roots;
-- spawn points;
-- scene-specific configs;
-- serialized references;
-- MonoBehaviours that are pure view/adapters.
-
-Сцена не должна сама решать, что игровой режим начался.
-
-### UI
-
-UI сообщает о намерениях:
-
-```text
-StartGame
-Pause
-Resume
-Restart
-ReturnToMainMenu
-OpenSettings
-```
-
-UI не должен напрямую дергать:
-
-```text
-SceneLoader.LoadScene(...)
-SceneLoader.ReloadScene()
-```
-
-## Scene Dependencies Через Providers
-
-Проблема остается: global states живут в `ProjectContext`, а часть ссылок
-появляется только после загрузки `Gameplay` scene.
-
-Пока не вводим общий контейнер ссылок сцены. В референсе `ecs-survivors`
-используется более конкретная схема:
-
-```text
-Scene initializer reads serialized scene references.
-Initializer writes them into specific providers/services.
-States consume those specific providers/services.
-```
-
-Примеры из `ecs-survivors`:
+Реальный паттерн:
 
 ```text
 LevelInitializer
@@ -225,294 +178,187 @@ UIInitializer
 
 BattleEnterState
 -> reads LevelDataProvider.StartPoint
--> creates hero
 ```
 
-Для нашего template это означает:
+Для нашего template:
 
 ```text
 GameplaySceneInitializer
--> fills LevelDataProvider
--> fills CameraProvider
--> fills UiRootProvider / WindowFactory / GameplayUiProvider
+-> fills concrete providers/services
+
+GameplayEnterState
+-> uses concrete providers/services
 ```
 
-А state использует конкретные зависимости:
+Не вводим общий контейнер scene references заранее.
 
-```csharp
-public class GameplayEnterState : IState, IGameState
-{
-    private readonly ILevelDataProvider _levelData;
-    private readonly IPlayerFactory _playerFactory;
+## Целевая Схема Для UnityTemplate
 
-    public void Enter()
-    {
-        _playerFactory.CreatePlayer(_levelData.StartPoint);
-        // prepare other session state
-    }
-}
+```text
+BootstrapState
+-> LoadMainMenuState
+-> MainMenuState
+-> LoadGameplayState
+-> GameplayEnterState
+-> GameplayState
+-> GameplayPauseState
+-> GameOverOrParagonState
 ```
 
-Если позже конкретных providers станет слишком много и появится повторяющийся
-boilerplate, тогда можно подумать об общем контейнере scene references. Но пока
-лучше держаться ближе к референсу и не вводить универсальную сущность заранее.
+Минимальная версия может временно оставить `MainMenuState` как loading+active
+state, но для соответствия референсу лучше разделить loading state и active
+state там, где режим становится долгоживущим.
 
-## State Responsibilities
+## Responsibilities
 
 ### BootstrapState
 
-Отвечает за глобальный старт:
-
-- init audio;
-- загрузка глобальных конфигов;
-- загрузка player/global progress, если он общий для проекта;
-- переход в `LoadMainMenuState`.
-
-Не отвечает за gameplay scene setup.
+- Инициализирует глобальные сервисы.
+- Переходит в загрузку меню.
+- Не занимается gameplay.
 
 ### LoadMainMenuState
 
-Отвечает только за загрузку `MainMenu`:
-
-- show curtain;
-- load `SceneEnum.MainMenu`;
-- hide curtain;
-- enter `MainMenuState`.
+- Показывает curtain.
+- Загружает `MainMenu`.
+- Скрывает curtain.
+- Входит в `MainMenuState`.
 
 ### MainMenuState
 
-Отвечает за активное меню:
-
-- принимает request стартовать игру;
-- переводит Start Game в `LoadGameplayState`;
-- при выходе чистит menu-specific состояние, если оно появится.
-
-UI не должен напрямую грузить gameplay scene.
+- Представляет активный menu mode.
+- Может быть пустым на старте.
+- UI меню может напрямую вызвать `stateMachine.Enter<LoadGameplayState>()`.
+- UI меню не должен вызывать `SceneLoader` напрямую.
 
 ### LoadGameplayState
 
-Отвечает только за загрузку gameplay scene:
-
-- show curtain;
-- load `SceneEnum.Gameplay`;
-- дождаться, что scene initializers записали ссылки в нужные providers;
-- hide curtain;
-- enter `GameplayEnterState`.
-
-Не создает level/player/session напрямую.
+- Показывает curtain.
+- Загружает `Gameplay`.
+- Дожидается завершения загрузки сцены.
+- Скрывает curtain.
+- Входит в `GameplayEnterState`.
 
 ### GameplayEnterState
 
-Отвечает за подготовку игровой сессии:
-
-- берет scene references из конкретных providers/services;
-- берет scene references из конкретных providers/services;
-- использует инжектнутые factories/services;
-- создает level/session/player/start data;
-- готовит UI к gameplay;
-- после успешной подготовки входит в `GameplayState`.
-
-Если подготовка не удалась, здесь же можно уйти в error/retry/menu state.
+- Использует конкретные providers/services, заполненные scene initializers.
+- Создает/готовит игровую сессию.
+- Входит в `GameplayState`.
 
 ### GameplayState
 
-Отвечает за активный gameplay:
-
-- включает активный игровой режим в `Enter`;
-- каждый кадр выполняет gameplay logic в `Tick`;
-- обрабатывает pause/game over/win/restart/main menu requests;
-- не грузит сцены напрямую из UI;
-- при выходе останавливает активный gameplay и чистит state-owned подписки.
-
-На первом этапе `Tick` может быть пустым. Важно, что место для активного цикла
-принадлежит state machine, а не scene bootstrap.
+- Владеет активным игровым циклом.
+- Реализует update-интерфейс по аналогии с `IUpdateable` в `ecs-survivors`.
+- В `Update()` вызывает нужные gameplay services.
+- При game over / pause / restart / return to menu переводит state machine в
+  следующий state.
+- В `Exit()` чистит то, чем владеет state.
 
 ### GameplayPauseState
 
-Отвечает за паузу:
-
-- останавливает активные gameplay-процессы;
-- показывает pause UI;
-- resume -> возврат в `GameplayState`;
-- main menu -> `LoadMainMenuState`;
-- restart -> `LoadGameplayState`.
+- Останавливает активную игру или переводит сервисы в pause-состояние.
+- Resume возвращает в `GameplayState`.
+- Main menu переводит в `LoadMainMenuState`.
+- Restart переводит в `LoadGameplayState`.
 
 ### GameOverOrParagonState
 
-Отвечает за завершение сессии:
-
-- остановить активный gameplay;
-- сохранить результаты;
-- показать game end UI;
-- restart -> `LoadGameplayState`;
-- main menu -> `LoadMainMenuState`.
-
-## Update Lifecycle В State Machine
-
-Добавить интерфейс:
-
-```csharp
-public interface IUpdateableState
-{
-    void Tick();
-}
-```
-
-`GameStateMachine` должен быть `ITickable` и тикать только активное состояние:
-
-```csharp
-public class GameStateMachine : SimpleStateMachine<IGameState>, ITickable
-{
-    public void Tick()
-    {
-        if (_currentState is IUpdateableState updateable)
-            updateable.Tick();
-    }
-}
-```
-
-Тогда `GameplayState` становится владельцем активного цикла:
-
-```csharp
-public class GameplayState : IState, IGameState, IUpdateableState
-{
-    public void Enter()
-    {
-        // Enable gameplay mode.
-    }
-
-    public void Tick()
-    {
-        // Active gameplay loop lives here.
-    }
-
-    public void Exit()
-    {
-        // Stop gameplay mode and cleanup state-owned subscriptions.
-    }
-}
-```
-
-## Transition Safety
-
-Нужно не дать UI вызвать два перехода одновременно.
-
-Минимальный вариант:
-
-```csharp
-public bool IsTransitioning { get; private set; }
-```
-
-State machine:
-
-```text
-if IsTransitioning -> ignore or log transition request
-before async transition -> IsTransitioning = true
-after transition complete -> IsTransitioning = false
-```
-
-UI дополнительно должен блокировать Start/Restart/MainMenu кнопки после клика.
+- Останавливает активную игру.
+- Показывает результат.
+- Restart переводит в `LoadGameplayState`.
+- Main menu переводит в `LoadMainMenuState`.
 
 ## UI Правило
 
-UI не должен знать `SceneLoader`.
+Как в `ecs-survivors`:
 
-Вместо этого:
+```text
+UI -> GameStateMachine.Enter(...)
+UI -> not SceneLoader.LoadScene(...)
+```
+
+Допустимо:
 
 ```csharp
-public interface IGameFlowService
+private void StartGame()
 {
-    void StartGame();
-    void RestartGame();
-    void ReturnToMainMenu();
-    void PauseGame();
-    void ResumeGame();
+    _stateMachine.Enter<LoadGameplayState>();
 }
 ```
 
-UI вызывает flow service:
+Недопустимо:
 
 ```csharp
-_gameFlow.StartGame();
+private async void StartGame()
+{
+    await _sceneLoader.LoadScene(SceneEnum.Gameplay);
+}
 ```
 
-А flow service уже вызывает state machine:
+Смысл: UI выбирает следующий state, но загрузкой сцены и cleanup занимается
+сам state. Дополнительную прослойку между UI и `GameStateMachine` не вводим.
+
+## DI Rule
+
+Как в `ecs-survivors`:
+
+```text
+DI creates states and services.
+States receive dependencies through DI.
+Scene initializers write scene references into concrete providers.
+States consume concrete providers.
+```
+
+Не добавляем новые прослойки заранее. Если позже появится реальная боль, будем
+обсуждать ее отдельно и сверять с задачей, а не добавлять абстракции по инерции.
+
+## Пошаговый План
+
+### Шаг 1. Привести state machine к update-модели
+
+Сделать `GameStateMachine` `ITickable`.
+
+Добавить интерфейс по аналогии с `ecs-survivors`:
 
 ```csharp
-_stateMachine.Enter<LoadGameplayState>();
+public interface IUpdateable
+{
+    void Update();
+}
 ```
 
-Так UI остается тонким: он не знает, какие сцены грузятся и какие states нужны.
+В `GameStateMachine.Tick()`:
 
-## DI Правила
+```text
+if currentState is IUpdateable updateable
+-> updateable.Update()
+```
 
-1. `ProjectContext` владеет глобальным flow:
+### Шаг 2. Добавить loading/enter/active states для gameplay
 
-   - `GameStateMachine`;
-   - global states;
-   - `SceneLoader`;
-   - `LoadingCurtain`;
-   - `IGameFlowService`;
-   - global providers/services, которые нужны states;
-   - global services.
+Добавить:
 
-2. `SceneContext` владеет локальной композицией сцены:
-
-   - scene references;
-   - UI root;
-   - level data;
-   - scene-scoped factories;
-   - scene-scoped services;
-   - scene initializers, которые передают ссылки в providers/services.
-
-3. Scene services не должны начинать session сами через `IInitializable`, если
-   это меняет игровой режим.
-
-4. Все переходы между major modes идут через global state machine.
-
-5. Если gameplay logic становится большой, сначала группировать ее в private
-   methods внутри state или в простые domain services. Не вводить отдельный
-   lifecycle owner без явной необходимости.
-
-## Пошаговый План Внедрения
-
-### Шаг 1. Зафиксировать Контракт
-
-Добавить интерфейсы:
-
-- `IUpdateableState`;
-- `IGameFlowService`;
-- конкретные providers для scene references, если их еще нет.
-
-На этом шаге можно не менять поведение, только создать основу.
-
-### Шаг 2. Разделить Loading И Active States
-
-Переименовать/добавить states:
-
-- `LoadMainMenuState`;
-- `MainMenuState`;
 - `LoadGameplayState`;
 - `GameplayEnterState`;
-- `GameplayState`;
-- `GameplayPauseState`;
-- `GameOverOrParagonState`.
+- `GameplayState`.
 
-`LoadGameplayState` больше не считается владельцем gameplay. Он только грузит
-сцену.
+`LoadGameplayState` только грузит сцену.
 
-### Шаг 3. Добавить Tick В GameStateMachine
+`GameplayEnterState` готовит сессию.
 
-Сделать `GameStateMachine : ITickable`.
+`GameplayState` тикает активную игру.
 
-Тикать только активный state, если он реализует `IUpdateableState`.
+### Шаг 3. Перенести подготовку gameplay в GameplayEnterState
 
-Это главный шаг, который возвращает внешний control loop.
+Если появятся scene services по типу `GameplayBootstrap`, они не должны сами
+стартовать игру через `IInitializable`.
 
-### Шаг 4. Подключить Scene Initializers И Providers
+То, что в `IgnisBearer` делает `GameplayBootstrap.CreateGame()`, в template
+должно вызываться из `GameplayEnterState`, обычными инжектнутыми сервисами.
 
-В gameplay scene добавить initializers, которые читают serialized references и
-передают их в конкретные providers/services.
+### Шаг 4. Добавить concrete providers для scene references
+
+По примеру `LevelDataProvider`, `CameraProvider`, `WindowFactory.SetUIRoot`.
 
 Пример:
 
@@ -520,143 +366,71 @@ _stateMachine.Enter<LoadGameplayState>();
 GameplaySceneInitializer
 -> LevelDataProvider.SetStartPoint(...)
 -> CameraProvider.SetMainCamera(...)
--> GameplayUiProvider.SetRoot(...)
+-> UiRootProvider.SetRoot(...)
 ```
 
-`LoadGameplayState` после загрузки сцены должен быть уверен, что scene
-initializers уже отработали.
+States используют эти providers напрямую.
 
-### Шаг 5. Реализовать GameplayEnterState
+### Шаг 5. UI оставляем простым
 
-`GameplayEnterState` использует:
+UI MonoBehaviour может быть подписан на кнопки сам.
 
-- concrete scene providers;
-- factories;
-- services;
-- configs;
-- save/start data.
-
-И сам подготавливает игровую сессию.
-
-После подготовки:
+Он может дергать:
 
 ```text
-stateMachine.Enter<GameplayState>()
+stateMachine.Enter<...>()
+windowService.Open(...)
+windowService.Close(...)
 ```
 
-### Шаг 6. Реализовать GameplayState Tick
-
-`GameplayState` реализует `IUpdateableState`.
-
-В `Tick` временно можно оставить заглушку, но все активные gameplay updates,
-которые относятся к flow режима, должны постепенно приходить сюда или
-вызываться отсюда.
-
-### Шаг 7. Перенести Start Game UI На Flow Service
-
-`MainMenu.StartGame()` больше не вызывает state machine напрямую.
-
-Вместо этого:
+Он не должен дергать:
 
 ```text
-MainMenu.StartGame()
--> IGameFlowService.StartGame()
--> stateMachine.Enter<LoadGameplayState>()
+sceneLoader.LoadScene(...)
+sceneLoader.ReloadScene()
 ```
 
-### Шаг 8. Перенести Restart/MainMenu/GameOver UI На Flow Service
-
-Запретить прямые вызовы:
-
-```text
-SceneLoader.ReloadScene()
-SceneLoader.LoadScene(MainMenu)
-```
-
-Вместо этого:
-
-```text
-Restart -> IGameFlowService.RestartGame()
-MainMenu -> IGameFlowService.ReturnToMainMenu()
-```
-
-### Шаг 9. Добавить Safe Exit
+### Шаг 6. Добавить cleanup в active states
 
 Минимум:
 
-- `GameplayState.Exit()` останавливает state-owned gameplay processes;
-- `GameOverOrParagonState.Enter()` сохраняет результат и показывает UI;
-- scene-specific providers очищаются при unload сцены, если они держат ссылки на
-  объекты сцены.
+- `GameplayState.Exit()` чистит подписки и state-owned процессы.
+- `MainMenuState.Exit()` чистит menu-owned процессы, если они появятся.
+- `GameOverOrParagonState` отвечает за завершение и результат.
 
-Позже можно добавить end-of-frame transition, если появятся гонки в кадре.
+### Шаг 7. Позже добавить end-of-frame exit, если понадобится
 
-### Шаг 10. Убрать async void Из States
+В `ecs-survivors` для долгоживущих states есть отложенный выход в конце кадра.
 
-Цель:
-
-```csharp
-UniTask EnterAsync();
-UniTask ExitAsync();
-```
-
-Можно делать не сразу. Но для scene loading и transition safety это важный шаг.
-
-### Шаг 11. Добавить Защиту От Запуска Не Той Сцены
-
-Добавить editor helper:
+Пока не тащим это автоматически. Сначала делаем простую модель:
 
 ```text
-if ProjectContext not ready and active scene is not Bootstrap
--> load Bootstrap
+Enter
+Update
+Exit
 ```
 
-Это защитит DI/lifecycle от случайного запуска `MainMenu` или `Gameplay`.
-
-## Минимальная Первая Версия
-
-Чтобы не переписать все сразу, минимальный полезный вертикальный срез:
-
-```text
-IUpdateableState
-GameStateMachine : ITickable
-IGameFlowService
-scene initializers/providers for scene references
-LoadGameplayState waits until scene references are available
-GameplayEnterState prepares session directly
-GameplayState owns Tick directly
-MainMenu uses IGameFlowService.StartGame
-```
-
-Это уже фиксирует главное: внешний state machine снова владеет циклом, без
-добавления промежуточного владельца игрового режима.
+Если появятся баги из-за перехода посреди update-кадра, тогда переносим паттерн
+`EndOfFrameExitState`.
 
 ## Проверочный Список
 
-Перед тем как считать перенос парадигмы успешным, должно быть верно:
+Перед тем как считать перенос успешным:
 
-- Нет major-mode переходов напрямую через `SceneLoader` из UI.
-- `Gameplay` не стартует сам только потому, что сцена загрузилась.
-- Нет дополнительной сущности, которая владеет игровым циклом вместо state.
-- `GameplayEnterState` сам подготавливает сессию.
-- Активный gameplay tick принадлежит `GameplayState`.
-- Pause/game over/restart/menu проходят через state machine.
-- Cleanup gameplay session вызывается до входа в следующий major mode.
-- Scene installers только собирают зависимости, но не владеют flow.
+- UI не вызывает `SceneLoader`.
+- UI может вызывать `GameStateMachine.Enter`.
+- Загрузкой сцен владеют loading states.
+- Подготовкой gameplay владеет `GameplayEnterState`.
+- Активным tick владеет `GameplayState`.
+- Cleanup находится в state exit.
+- Scene references передаются через concrete initializers/providers.
+- Нет новых абстракций, которых нет в референсном lifecycle-паттерне.
 
 ## Главное Правило
 
-Если коротко, вся миграция держится на одном вопросе:
-
 ```text
-Кто имеет право сказать "игра началась", "игра тикает", "игра закончилась"?
+Scene is data and references.
+DI wires objects.
+UI requests state transitions.
+State owns lifecycle.
 ```
-
-Ответ должен быть:
-
-```text
-External game state machine through states.
-```
-
-DI помогает создать объекты. Scene дает ссылки. UI сообщает о намерениях.
-Но жизненным циклом режима владеют states.

@@ -1,4 +1,4 @@
-# Project Agent Guide
+﻿# Project Agent Guide
 
 ## Project Snapshot
 - Unity project: `IgnisBearer` / `UnityTemplate`.
@@ -22,6 +22,16 @@
 - Scene loading utilities live in `Assets/_Project/Scripts/Infrastructure/SceneManagement`.
 - Audio domain/data/view code lives in `Assets/_Project/Scripts/Audio`.
 - Localization code lives in `Assets/_Project/Scripts/Localization`.
+
+## Reference-Locked Lifecycle Work
+- For lifecycle, state machine, DI, scene loading, UI flow, and gameplay loop decisions, use `F:\unity_personal\Tutorials\ecs-survivors-viewers-main\src\ecs-survivors` as the baseline reference.
+- Do not introduce architectural layers that are not present in the `ecs-survivors` lifecycle unless the user explicitly asks for a separate proposal.
+- Before recommending or documenting a lifecycle change, identify the matching `ecs-survivors` class/file or pattern and map it to this project.
+- Every lifecycle recommendation must be either reference-backed or clearly labeled as a new proposal. New proposals require an explicit pause before adding them to docs or code.
+- UI flow follows the reference: UI may call `GameStateMachine.Enter(...)`; UI must not call `SceneLoader.LoadScene(...)` directly.
+- Scene references follow the reference: scene initializers write concrete references into concrete providers/services. Do not add generic scene-scope abstractions by default.
+- States own lifecycle responsibilities: loading, enter/setup, update, exit, and cleanup. Do not move lifecycle ownership into bootstrap services, `IInitializable`, UI, or scene-loaded objects by default.
+- Do not add flow services, presenter/controller layers, gameplay runtime/session wrappers, generic scene scopes, registries, or similar abstractions unless explicitly requested.
 
 ## C# Style
 - Follow the existing namespace style, for example `_Project.Scripts.Infrastructure`.

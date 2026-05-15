@@ -1,4 +1,4 @@
-﻿﻿# Lifecycle Migration Plan
+﻿﻿﻿﻿# Lifecycle Migration Plan
 
 Цель: развить `UnityTemplate` так, чтобы реальный игровой цикл не уезжал внутрь
 сцены, `MonoBehaviour`, `IInitializable` или `ITickable`, как это постепенно
@@ -197,55 +197,65 @@ SceneLoader.LoadScene(...)
 SceneLoader.ReloadScene()
 ```
 
-## Scene Dependencies Без Внутреннего Цикла
+## Scene Dependencies Через Providers
 
-Проблема остается: global states живут в `ProjectContext`, а часть зависимостей
+Проблема остается: global states живут в `ProjectContext`, а часть ссылок
 появляется только после загрузки `Gameplay` scene.
 
-Решение: нужен bridge для scene references, но не для lifecycle.
+Пока не вводим общий контейнер ссылок сцены. В референсе `ecs-survivors`
+используется более конкретная схема:
 
-Например:
+```text
+Scene initializer reads serialized scene references.
+Initializer writes them into specific providers/services.
+States consume those specific providers/services.
+```
+
+Примеры из `ecs-survivors`:
+
+```text
+LevelInitializer
+-> reads StartPoint and MainCamera from scene
+-> writes StartPoint into LevelDataProvider
+-> writes MainCamera into CameraProvider
+
+UIInitializer
+-> reads UIRoot from scene
+-> writes UIRoot into WindowFactory
+
+BattleEnterState
+-> reads LevelDataProvider.StartPoint
+-> creates hero
+```
+
+Для нашего template это означает:
+
+```text
+GameplaySceneInitializer
+-> fills LevelDataProvider
+-> fills CameraProvider
+-> fills UiRootProvider / WindowFactory / GameplayUiProvider
+```
+
+А state использует конкретные зависимости:
 
 ```csharp
-public interface IGameplaySceneScope
+public class GameplayEnterState : IState, IGameState
 {
-    Transform PlayerSpawnPoint { get; }
-    Canvas GameplayUiRoot { get; }
-    Camera GameplayCamera { get; }
+    private readonly ILevelDataProvider _levelData;
+    private readonly IPlayerFactory _playerFactory;
+
+    public void Enter()
+    {
+        _playerFactory.CreatePlayer(_levelData.StartPoint);
+        // prepare other session state
+    }
 }
 ```
 
-И registry/provider только для доступа к текущей scene scope:
-
-```csharp
-public interface IGameplaySceneScopeProvider
-{
-    IGameplaySceneScope Current { get; }
-    void Register(IGameplaySceneScope scope);
-    void Unregister(IGameplaySceneScope scope);
-}
-```
-
-Важно: `IGameplaySceneScope` не имеет методов `Start`, `Tick`, `Stop`, `Pause`.
-Это не внутренний цикл. Это просто способ дать state доступ к объектам сцены.
-
-`GameplaySceneEntryPoint` может зарегистрировать scope при загрузке сцены:
-
-```csharp
-public class GameplaySceneEntryPoint : MonoBehaviour, IGameplaySceneScope
-{
-    [SerializeField] private Transform _playerSpawnPoint;
-    [SerializeField] private Canvas _gameplayUiRoot;
-    [SerializeField] private Camera _gameplayCamera;
-
-    public Transform PlayerSpawnPoint => _playerSpawnPoint;
-    public Canvas GameplayUiRoot => _gameplayUiRoot;
-    public Camera GameplayCamera => _gameplayCamera;
-}
-```
-
-После этого `GameplayEnterState` использует scene scope и инжектнутые сервисы,
-чтобы подготовить сессию.
+Если позже конкретных providers станет слишком много и появится повторяющийся
+boilerplate, тогда можно подумать об общем контейнере scene references. Но пока
+лучше держаться ближе к референсу и не вводить универсальную сущность заранее.
 
 ## State Responsibilities
 
@@ -285,7 +295,7 @@ UI не должен напрямую грузить gameplay scene.
 
 - show curtain;
 - load `SceneEnum.Gameplay`;
-- дождаться, что scene scope зарегистрирован;
+- дождаться, что scene initializers записали ссылки в нужные providers;
 - hide curtain;
 - enter `GameplayEnterState`.
 
@@ -295,7 +305,8 @@ UI не должен напрямую грузить gameplay scene.
 
 Отвечает за подготовку игровой сессии:
 
-- берет scene references из `IGameplaySceneScopeProvider`;
+- берет scene references из конкретных providers/services;
+- берет scene references из конкретных providers/services;
 - использует инжектнутые factories/services;
 - создает level/session/player/start data;
 - готовит UI к gameplay;
@@ -442,7 +453,7 @@ _stateMachine.Enter<LoadGameplayState>();
    - `SceneLoader`;
    - `LoadingCurtain`;
    - `IGameFlowService`;
-   - scene scope provider;
+   - global providers/services, которые нужны states;
    - global services.
 
 2. `SceneContext` владеет локальной композицией сцены:
@@ -452,7 +463,7 @@ _stateMachine.Enter<LoadGameplayState>();
    - level data;
    - scene-scoped factories;
    - scene-scoped services;
-   - scene scope object.
+   - scene initializers, которые передают ссылки в providers/services.
 
 3. Scene services не должны начинать session сами через `IInitializable`, если
    это меняет игровой режим.
@@ -471,8 +482,7 @@ _stateMachine.Enter<LoadGameplayState>();
 
 - `IUpdateableState`;
 - `IGameFlowService`;
-- `IGameplaySceneScope`;
-- `IGameplaySceneScopeProvider`.
+- конкретные providers для scene references, если их еще нет.
 
 На этом шаге можно не менять поведение, только создать основу.
 
@@ -499,19 +509,28 @@ _stateMachine.Enter<LoadGameplayState>();
 
 Это главный шаг, который возвращает внешний control loop.
 
-### Шаг 4. Подключить Scene Scope
+### Шаг 4. Подключить Scene Initializers И Providers
 
-В gameplay scene добавить объект, который реализует `IGameplaySceneScope`.
+В gameplay scene добавить initializers, которые читают serialized references и
+передают их в конкретные providers/services.
 
-Scene installer или entry point регистрирует scope в provider.
+Пример:
 
-`LoadGameplayState` после загрузки сцены ждет, что scope доступен.
+```text
+GameplaySceneInitializer
+-> LevelDataProvider.SetStartPoint(...)
+-> CameraProvider.SetMainCamera(...)
+-> GameplayUiProvider.SetRoot(...)
+```
+
+`LoadGameplayState` после загрузки сцены должен быть уверен, что scene
+initializers уже отработали.
 
 ### Шаг 5. Реализовать GameplayEnterState
 
 `GameplayEnterState` использует:
 
-- scene scope;
+- concrete scene providers;
 - factories;
 - services;
 - configs;
@@ -567,7 +586,8 @@ MainMenu -> IGameFlowService.ReturnToMainMenu()
 
 - `GameplayState.Exit()` останавливает state-owned gameplay processes;
 - `GameOverOrParagonState.Enter()` сохраняет результат и показывает UI;
-- scene scope очищается при unload сцены.
+- scene-specific providers очищаются при unload сцены, если они держат ссылки на
+  объекты сцены.
 
 Позже можно добавить end-of-frame transition, если появятся гонки в кадре.
 
@@ -601,9 +621,8 @@ if ProjectContext not ready and active scene is not Bootstrap
 IUpdateableState
 GameStateMachine : ITickable
 IGameFlowService
-IGameplaySceneScope
-IGameplaySceneScopeProvider
-LoadGameplayState waits for scene scope
+scene initializers/providers for scene references
+LoadGameplayState waits until scene references are available
 GameplayEnterState prepares session directly
 GameplayState owns Tick directly
 MainMenu uses IGameFlowService.StartGame

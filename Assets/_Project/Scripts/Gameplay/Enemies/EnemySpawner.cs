@@ -8,7 +8,6 @@ namespace _Project.Scripts.Gameplay.Enemies
 {
     public class EnemySpawner : IEnemySpawner
     {
-        private const float SPAWN_INTERVAL_SECONDS = 3f;
         private const float MIN_SPAWN_RADIUS = 3f;
         private const float MAX_SPAWN_RADIUS = 5f;
 
@@ -18,6 +17,7 @@ namespace _Project.Scripts.Gameplay.Enemies
         private float _timeToNextSpawn;
 
         [Inject] private IEnemyFactory _enemyFactory;
+        [Inject] private EnemySpawnerConfig _config;
         [Inject] private IRandomService _random;
         [Inject] private ITimeService _time;
 
@@ -48,7 +48,7 @@ namespace _Project.Scripts.Gameplay.Enemies
                 return;
 
             SpawnEnemy();
-            _timeToNextSpawn = SPAWN_INTERVAL_SECONDS;
+            _timeToNextSpawn = _config.SpawnIntervalSeconds;
         }
 
         public void Cleanup()

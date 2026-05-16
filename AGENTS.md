@@ -109,7 +109,7 @@ Assets/_Project/Scripts/
 
 Each state implements `IState, IGameState` directly or inherits a base state that does. Bind every lifecycle state in `ProjectInstaller` with self binding, resolve states through `IStateFactory`, transition with `_stateMachine.Enter<SomeState>()`, and keep scene loading inside loading states.
 
-`GameplayEnterState` owns the current example gameplay setup: it reads `ILevelStartPointProvider.StartPoint`, calls `IExampleUnitFactory.Create(...)`, then enters `GameplayState`. `ExampleUnitFactory` follows the reference-backed prefab flow: `Resources` path `Gameplay/Units/ExampleUnit` -> `IAssetProvider` -> Zenject `IInstantiator`, mirroring `HeroFactory.AddViewPath("Gameplay/Hero/hero")` and `EntityViewFactory.CreateViewForEntity(...)` in `ecs-survivors`. `GameplayState` inherits `EndOfFrameExitState`; it starts/ticks/cleans active gameplay services such as `IEnemySpawner`, and its `ExitOnEndOfFrame()` calls cleanup for state-owned runtime objects. `EnemyFactory` follows the same prefab flow with `Resources` path `Gameplay/Enemies/EnemyUnit`. Do not use serialized gameplay prefab fields on `ProjectInstaller` for runtime gameplay prefabs unless explicitly approved as a new proposal. `GameplaySceneInitializer` writes the `MainCamera` and `GameplayStartPoint` scene references into `CameraProvider` and `LevelStartPointProvider`.
+`GameplayEnterState` owns the current example gameplay setup: it reads `ILevelStartPointProvider.StartPoint`, calls `IExampleUnitFactory.Create(...)`, then enters `GameplayState`. `ExampleUnitFactory` follows the reference-backed prefab flow: `Resources` path `Gameplay/Units/ExampleUnit` -> `IAssetProvider` -> Zenject `IInstantiator`, mirroring `HeroFactory.AddViewPath("Gameplay/Hero/hero")` and `EntityViewFactory.CreateViewForEntity(...)` in `ecs-survivors`. `GameplayState` inherits `EndOfFrameExitState`; it starts/ticks/cleans active gameplay services such as `IEnemySpawner`, and its `ExitOnEndOfFrame()` calls cleanup for state-owned runtime objects. `EnemyFactory` follows the same prefab flow with `Resources` path `Gameplay/Enemies/EnemyUnit`. `EnemySpawner` reads tunable numeric values from injected `EnemySpawnerConfig`, which is assigned in `GlobalConfigInstaller`. Do not use serialized gameplay prefab fields on `ProjectInstaller` for runtime gameplay prefabs unless explicitly approved as a new proposal. `GameplaySceneInitializer` writes the `MainCamera` and `GameplayStartPoint` scene references into `CameraProvider` and `LevelStartPointProvider`.
 
 Scene initializers that implement Zenject interfaces must be listed in `SceneInitializationInstaller` on the scene `SceneContext`, matching the `ecs-survivors` pattern.
 
@@ -126,6 +126,13 @@ backs that gameplay menu modal. This is not a result/game-over window, and
 inject concrete windows such as `SettingsView` directly into menu UI.
 
 **Zenject DI** wires dependencies. No `new SomeService()` for DI-owned services - bind them in installers and inject them. `IInitializable` is allowed for local setup, UI presenters, settings, cached references, and other non-flow initialization. Do not use `IInitializable` to enter gameplay states, load gameplay scenes, or start active gameplay loops.
+
+**Config Assets vs Prefab Registries** are intentionally different. Value/config
+assets with gameplay or settings numbers should be assigned in installers,
+bound with `FromInstance(...)`, and injected; `EnemySpawnerConfig` is the current
+example. Dynamic prefab registries that map ids to prefabs may stay
+resource-backed, matching `ecs-survivors` `WindowsConfig`/`StaticDataService`
+lookup. `WindowsConfig` is a prefab registry, not a numeric settings config.
 
 Three installer types:
 - `MonoInstaller` - scene-bound, serialized fields for Unity references

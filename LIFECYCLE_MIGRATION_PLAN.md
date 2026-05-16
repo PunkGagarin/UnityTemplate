@@ -104,7 +104,9 @@ state/factory -> path/provider -> asset load -> instantiation.
   IInstantiator`. Lifecycle mapping взят из `BattleLoopState.OnUpdate()` ->
   `BattleFeature.Execute()` -> `EnemySpawnSystem.Execute()`, но без ECS/Feature
   слоя. `GameplayState` запускает spawner с player transform, тикает его в
-  `Update()` и чистит через `ExitOnEndOfFrame()`.
+  `Update()` и чистит через `ExitOnEndOfFrame()`. Spawn interval вынесен в
+  value config `EnemySpawnerConfig`, который биндится через
+  `GlobalConfigInstaller`.
 - `[done]` UI reference audit.
   UI lifecycle в `ecs-survivors` разобран по классам `UIInitializer`,
   `WindowService`, `WindowFactory`, `BaseWindow`, `WindowsConfig`, `HomeHUD`,
@@ -143,6 +145,15 @@ state/factory -> path/provider -> asset load -> instantiation.
   `SettingsView` и `Restart` наследуют `BaseWindow`, `WindowId` entries есть в
   `Resources/Configs/Windows/windowConfig`, `UIInitializer` зарегистрирован в
   `MainMenu` и `Gameplay` сценах.
+- `[done]` Config rule - value configs vs prefab registries.
+  Value configs с gameplay/settings значениями назначаются в installers и
+  инжектятся. Prefab registries, которые мапят id/path на prefab для dynamic
+  creation, могут оставаться resource-backed. `WindowsConfig` относится к
+  prefab registry, как в `ecs-survivors`.
+- `[done]` Config example - enemy spawner interval.
+  Добавлен `EnemySpawnerConfig` с `SpawnIntervalSeconds = 3`. Config asset
+  лежит в `Assets/_Project/Data/Config`, назначается в `GlobalConfigInstaller`
+  и инжектится в `EnemySpawner`.
 - `[blocked]` Unity validation after UI window migration.
   Требует Play Mode в Unity Editor: проверить `MainMenu -> Settings -> Apply`,
   `MainMenu -> Settings -> Cancel`, `MainMenu -> Gameplay`, и в gameplay
@@ -482,7 +493,7 @@ Scene HUD
 Modal window
 -> WindowService.Open(WindowId)
 -> WindowFactory.CreateWindow(WindowId)
--> WindowsConfig gives prefab
+-> WindowsConfig resource registry gives prefab
 -> Zenject IInstantiator creates BaseWindow under scene UIRoot
 -> window buttons call WindowService.Close(...) and/or GameStateMachine.Enter(...)
 ```
@@ -506,8 +517,9 @@ Gameplay choice window
   Stores opened `BaseWindow` instances, opens through factory, closes by
   destroying the opened window GameObject.
 - `Gameplay/Windows/WindowFactory.cs`
-  Stores current `UIRoot`, gets prefab by `WindowId`, instantiates prefab with
-  Zenject `IInstantiator` under `UIRoot`.
+  Stores current `UIRoot`, gets prefab by `WindowId` from resource-backed
+  `WindowsConfig`, instantiates prefab with Zenject `IInstantiator` under
+  `UIRoot`.
 - `Gameplay/Windows/BaseWindow.cs`
   Window MonoBehaviour lifecycle: `Awake -> OnAwake`, `Start -> Initialize +
   SubscribeUpdates`, `OnDestroy -> Cleanup -> UnsubscribeUpdates`.
@@ -659,9 +671,27 @@ Container.Bind<IWindowService>().To<WindowService>().AsSingle()
 Container.Bind<IWindowFactory>().To<WindowFactory>().AsSingle()
 ```
 
-Prefab lookup должен быть config-backed, как в `ecs-survivors`.
-Если для этого потребуется переносить часть `StaticDataService`, сначала
-сверяем scope: reference path is `StaticDataService.GetWindowPrefab(id)`.
+Prefab lookup остается config-backed, как в `ecs-survivors`, и текущий
+UnityTemplate rule разделяет два случая:
+
+```text
+Value config with gameplay/settings numbers
+-> installer serialized reference
+-> FromInstance(...)
+-> inject where needed
+
+Example:
+EnemySpawnerConfig
+-> GlobalConfigInstaller
+-> EnemySpawner
+
+Dynamic prefab registry by id/path
+-> resource-backed registry is allowed
+-> lookup during factory/static-data flow
+```
+
+`WindowsConfig` - это prefab registry, а не numeric/settings config, поэтому он
+остается в `Resources/Configs/Windows/windowConfig`.
 
 ### UI Step 2. Add scene UI root initialization
 
@@ -807,6 +837,10 @@ Request transport можно вернуть позже, если появятс�
 - windows unsubscribe in `Cleanup/UnsubscribeUpdates`;
 - `UIInitializer` sets `UIRoot` before any state opens a window in that scene;
 - `WindowsConfig` contains every `WindowId` used by code;
+- value configs are assigned in installers and injected;
+- dynamic prefab registries may be resource-backed when used for id/path lookup;
+- `EnemySpawner` uses `EnemySpawnerConfig.SpawnIntervalSeconds`, not a hardcoded
+  interval constant;
 - Play Mode validates `MainMenu -> Settings`, `MainMenu -> Gameplay`,
   `GearButton -> GameplayMenuWindow -> Restart`,
   `GearButton -> GameplayMenuWindow -> MainMenu`.

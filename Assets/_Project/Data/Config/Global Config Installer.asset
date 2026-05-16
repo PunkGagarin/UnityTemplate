@@ -12,4 +12,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4282c775772d42f092643e7ca152d02b, type: 3}
   m_Name: Global Config Installer
   m_EditorClassIdentifier: Assembly-CSharp::_Project.Scripts.GameplayData.GlobalConfigInstaller
-  _languageConfig: {fileID: 11400000, guid: 625438529fe15496eb8fb23c746b3502, type: 2}
+  <LanguageConfig>k__BackingField: {fileID: 11400000, guid: 625438529fe15496eb8fb23c746b3502, type: 2}
+  <EnemySpawnerConfig>k__BackingField: {fileID: 11400000, guid: 8d489ee3818740e1a19a1216fd2de532, type: 2}

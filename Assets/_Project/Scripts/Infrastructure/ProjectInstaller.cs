@@ -10,6 +10,7 @@ using _Project.Scripts.Gameplay.Units;
 using _Project.Scripts.Gameplay.Windows;
 using _Project.Scripts.Infrastructure.AssetManagement;
 using _Project.Scripts.Infrastructure.GameStates.Factory;
+using _Project.Scripts.Utils.Pause;
 using UnityEngine;
 using Zenject;
 
@@ -25,6 +26,7 @@ namespace _Project.Scripts.Infrastructure
             BindAssetManagement();
             BindCameraProvider();
             BindCommonServices();
+            BindPauseService();
             BindGameplayExample();
             BindWindowInfrastructure();
         }
@@ -58,6 +60,11 @@ namespace _Project.Scripts.Infrastructure
             Container.Bind<ITimeService>().To<UnityTimeService>().AsSingle();
             Container.Bind<IPhysicsService>().To<PhysicsService>().AsSingle();
             Container.Bind<IRandomService>().To<UnityRandomService>().AsSingle();
+        }
+
+        private void BindPauseService()
+        {
+            Container.BindInterfacesAndSelfTo<PauseService>().AsSingle().NonLazy();
         }
 
         private void BindStateMachine()

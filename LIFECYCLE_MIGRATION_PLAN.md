@@ -1,5 +1,9 @@
 ﻿# Lifecycle Migration Plan
 
+Status: historical migration/audit log. `AGENTS.md` is the source of truth for
+current architecture rules. Do not treat this file as an active task plan unless
+the user explicitly reopens lifecycle migration planning.
+
 Цель: переложить в `UnityTemplate` lifecycle-подход из `ecs-survivors`, не
 перенося ECS, generated code, `Feature`-слой и прочие детали реализации.
 
@@ -154,10 +158,16 @@ state/factory -> path/provider -> asset load -> instantiation.
   Добавлен `EnemySpawnerConfig` с `SpawnIntervalSeconds = 3`. Config asset
   лежит в `Assets/_Project/Data/Config`, назначается в `GlobalConfigInstaller`
   и инжектится в `EnemySpawner`.
+- `[done]` Gameplay menu pause.
+  `GearButton` включает `PauseService`, затем открывает
+  `GameplayMenuWindow`. `GameplayState` не тикает gameplay services пока
+  `PauseService.IsPaused`; `Restart` снимает паузу перед close, restart или
+  main menu. `LoadGameplayState` и `LoadMainMenuState` также снимают паузу как
+  safety reset.
 - `[blocked]` Unity validation after UI window migration.
   Требует Play Mode в Unity Editor: проверить `MainMenu -> Settings -> Apply`,
   `MainMenu -> Settings -> Cancel`, `MainMenu -> Gameplay`, и в gameplay
-  `GearButton -> GameplayMenuWindow -> Restart/MainMenu`.
+  `GearButton -> GameplayMenuWindow -> Close/Restart/MainMenu`.
 - `[done]` Unity validation after Step 2.
   Проект запускается в Unity Editor.
 - `[done]` Unity validation after `LoadMainMenuState`.
@@ -423,16 +433,19 @@ BootstrapState
 - Владеет активным игровым циклом.
 - Реализует update-интерфейс по аналогии с `IUpdateable` в `ecs-survivors`.
 - В `Update()` вызывает нужные gameplay services.
+- Не тикает gameplay services, если `PauseService.IsPaused`.
 - При game over / pause / restart / return to menu переводит state machine в
   следующий state.
 - В `Exit()` чистит то, чем владеет state.
 
 ### GameplayPauseState
 
-- Останавливает активную игру или переводит сервисы в pause-состояние.
-- Resume возвращает в `GameplayState`.
-- Main menu переводит в `LoadMainMenuState`.
-- Restart переводит в `LoadGameplayState`.
+- Зарегистрирован как будущий lifecycle state.
+- Сейчас gear-menu pause не входит в `GameplayPauseState`, потому обычный
+  transition из `GameplayState` вызывает `ExitOnEndOfFrame()` и cleanup
+  runtime objects.
+- Перед использованием для menu pause нужно добавить явную suspend/resume
+  семантику, отличную от cleanup exit.
 
 ### GameOverOrParagonState
 
@@ -737,15 +750,22 @@ result/game-over UI: он открывается scene HUD кнопкой-шес
 Gameplay scene Canvas
 -> GearButton
 -> GameplayMenuButton.OpenGameplayMenu()
+-> pauseService.SetPaused(true)
 -> windowService.Open(WindowId.GameplayMenuWindow)
 
 GameplayMenuWindow.RestartButton
+-> pauseService.SetPaused(false)
 -> windowService.Close(Id)
 -> stateMachine.Enter<LoadGameplayState>()
 
 GameplayMenuWindow.MainMenuButton
+-> pauseService.SetPaused(false)
 -> windowService.Close(Id)
 -> stateMachine.Enter<LoadMainMenuState>()
+
+GameplayMenuWindow.CloseButton
+-> pauseService.SetPaused(false)
+-> windowService.Close(Id)
 ```
 
 Не открываем result window из `GameplayState` напрямую, если это станет
@@ -841,7 +861,10 @@ Request transport можно вернуть позже, если появятс�
 - dynamic prefab registries may be resource-backed when used for id/path lookup;
 - `EnemySpawner` uses `EnemySpawnerConfig.SpawnIntervalSeconds`, not a hardcoded
   interval constant;
+- `GearButton -> GameplayMenuWindow` sets pause, and close/restart/main-menu
+  actions unpause before closing or state transitions;
 - Play Mode validates `MainMenu -> Settings`, `MainMenu -> Gameplay`,
+  `GearButton -> GameplayMenuWindow -> Close`,
   `GearButton -> GameplayMenuWindow -> Restart`,
   `GearButton -> GameplayMenuWindow -> MainMenu`.
 
@@ -942,7 +965,7 @@ GameplayState.Enter()
 
 GameplayState.Update()
 -> enemySpawner waits for first gameplay click
--> enemySpawner spawns EnemyUnit near player every 3 seconds
+-> enemySpawner spawns EnemyUnit near player every EnemySpawnerConfig.SpawnIntervalSeconds
 ```
 
 ### Шаг 4. Добавить concrete providers для scene references

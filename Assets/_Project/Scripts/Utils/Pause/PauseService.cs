@@ -1,10 +1,14 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
+using Zenject;
+using _Project.Scripts.Gameplay.Common.Time;
 
 namespace _Project.Scripts.Utils.Pause
 {
     public class PauseService : IPauseHandler
     {
         private readonly List<IPauseHandler> _handlers = new();
+
+        [Inject] private ITimeService _timeService;
 
         public bool IsPaused { get; private set; }
 
@@ -21,8 +25,13 @@ namespace _Project.Scripts.Utils.Pause
         public void SetPaused(bool isPaused)
         {
             IsPaused = isPaused;
-            
-            foreach (var handler in _handlers)
+
+            if (isPaused)
+                _timeService.StopTime();
+            else
+                _timeService.StartTime();
+
+            foreach (IPauseHandler handler in _handlers)
             {
                 handler.SetPaused(isPaused);
             }

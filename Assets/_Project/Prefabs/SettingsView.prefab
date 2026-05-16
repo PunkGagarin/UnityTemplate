@@ -2854,7 +2854,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cae1a3845220483da005522dc8a67a15, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  content: {fileID: 4527870781240561008}
+  <Content>k__BackingField: {fileID: 4527870781240561008}
   _masterVolumeSlider: {fileID: 619405474677824879}
   _musicVolumeSlider: {fileID: 511476849572156679}
   _soundVolumeSlider: {fileID: 6557456501234286920}

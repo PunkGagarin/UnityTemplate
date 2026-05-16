@@ -4,13 +4,13 @@ This file provides guidance to Codex and other coding agents when working with c
 
 ## Project
 
-Unity template project built with Unity `6000.4.4f1` + URP. Infrastructure is the main focus; gameplay domain code is expected to be added per project.
+Unity template project built with Unity `6000.4.4f1` + URP. Infrastructure is the main focus; `Gameplay/Units` and `Gameplay/Enemies` are minimal example features used to exercise lifecycle and DI patterns.
 
 ## Build & Run
 
-This is a Unity project - there is no CLI build command. Open in Unity 6.0.4 and press Play. Scenes must be loaded in order: `Bootstrap -> MainMenu -> Gameplay` (configured in Build Settings).
+This is a Unity project - there is no CLI build command. Open in Unity `6000.4.4f1` and press Play. Scenes must be loaded in order: `Bootstrap -> MainMenu -> Gameplay` (configured in Build Settings).
 
-No automated tests exist. Manual validation is done by running the game in the Editor.
+No project-owned automated tests exist under `Assets/_Project`. Manual validation is done by running the game in the Editor.
 
 ## Repository Rules
 
@@ -41,7 +41,10 @@ Before recommending, documenting, or implementing a lifecycle change:
 Reference-backed lifecycle rules:
 
 - UI may call `GameStateMachine.Enter(...)`, as in `HomeHUD` / `GameOverWindow` from `ecs-survivors`.
+- UI may query UI-facing gameplay/meta services and static data for display, as in `LevelUpWindow` and `ShopWindow`.
+- Current UnityTemplate decision: gameplay/meta choice UI uses MVP direct service calls for now, not request queues. This is a user-approved simplification from the `ecs-survivors` request-entity pattern.
 - UI must not call `SceneLoader.LoadScene(...)` or `SceneLoader.ReloadScene(...)` directly.
+- UI must not run gameplay cleanup or control gameplay service lifecycle. Runtime gameplay/meta changes from UI should go through high-level feature/domain services, not scattered low-level calls across multiple services.
 - Loading states own scene loading.
 - Enter/setup states prepare a mode after scene load.
 - Active states own update, exit, and cleanup.
@@ -87,14 +90,17 @@ Assets/_Project/Scripts/
 ├── Gameplay/         # Game features, one subfolder per feature
 │   ├── Cameras/      # Camera provider and camera-facing gameplay helpers
 │   ├── Common/       # Small common gameplay services: time, random, physics
+│   ├── Enemies/      # Minimal enemy feature: view, factory, spawner service
 │   ├── Level/        # Concrete scene references and providers
-│   └── Units/        # Example gameplay feature folder
+│   ├── Units/        # Example gameplay feature folder
+│   └── Windows/      # Dynamic window infrastructure and window configs
 ├── Infrastructure/   # App lifecycle: GameRunner, StateMachine, States, SceneManagement
 ├── GameplayData/     # ScriptableObject repositories and base Definitions
 ├── Audio/            # Audio subsystem: Domain/, Data/, View/
 ├── Localization/     # EN/RU via XML
-├── MainMenu/         # Main menu UI
-└── Utils/            # Coroutine helper, Pause service, Editor tools
+├── MainMenu.cs       # Main menu UI entry script
+├── Restart.cs        # Example restart/menu UI script
+└── Utils/            # ContentUi helper, Pause service, Editor tools
 ```
 
 ### Core patterns
@@ -103,9 +109,21 @@ Assets/_Project/Scripts/
 
 Each state implements `IState, IGameState` directly or inherits a base state that does. Bind every lifecycle state in `ProjectInstaller` with self binding, resolve states through `IStateFactory`, transition with `_stateMachine.Enter<SomeState>()`, and keep scene loading inside loading states.
 
-`GameplayEnterState` owns the current example gameplay setup: it reads `ILevelStartPointProvider.StartPoint`, calls `IExampleUnitFactory.Create(...)`, then enters `GameplayState`. `ExampleUnitFactory` follows the reference-backed prefab flow: `Resources` path `Gameplay/Units/ExampleUnit` -> `IAssetProvider` -> Zenject `IInstantiator`, mirroring `HeroFactory.AddViewPath("Gameplay/Hero/hero")` and `EntityViewFactory.CreateViewForEntity(...)` in `ecs-survivors`. `GameplayState` inherits `EndOfFrameExitState`; its `ExitOnEndOfFrame()` calls `IExampleUnitFactory.Cleanup()` to clean state-owned runtime objects, mirroring active-state cleanup in `BattleLoopState`. Do not use serialized gameplay prefab fields on `ProjectInstaller` for runtime gameplay prefabs unless explicitly approved as a new proposal. `GameplaySceneInitializer` writes the `MainCamera` and `GameplayStartPoint` scene references into `CameraProvider` and `LevelStartPointProvider`.
+`GameplayEnterState` owns the current example gameplay setup: it reads `ILevelStartPointProvider.StartPoint`, calls `IExampleUnitFactory.Create(...)`, then enters `GameplayState`. `ExampleUnitFactory` follows the reference-backed prefab flow: `Resources` path `Gameplay/Units/ExampleUnit` -> `IAssetProvider` -> Zenject `IInstantiator`, mirroring `HeroFactory.AddViewPath("Gameplay/Hero/hero")` and `EntityViewFactory.CreateViewForEntity(...)` in `ecs-survivors`. `GameplayState` inherits `EndOfFrameExitState`; it starts/ticks/cleans active gameplay services such as `IEnemySpawner`, and its `ExitOnEndOfFrame()` calls cleanup for state-owned runtime objects. `EnemyFactory` follows the same prefab flow with `Resources` path `Gameplay/Enemies/EnemyUnit`. Do not use serialized gameplay prefab fields on `ProjectInstaller` for runtime gameplay prefabs unless explicitly approved as a new proposal. `GameplaySceneInitializer` writes the `MainCamera` and `GameplayStartPoint` scene references into `CameraProvider` and `LevelStartPointProvider`.
 
 Scene initializers that implement Zenject interfaces must be listed in `SceneInitializationInstaller` on the scene `SceneContext`, matching the `ecs-survivors` pattern.
+
+**Window Flow** follows the reference-backed dynamic window path:
+`WindowService.Open(WindowId)` -> `WindowFactory.CreateWindow(...)` ->
+`WindowsConfig` prefab lookup at `Resources/Configs/Windows/windowConfig` ->
+Zenject `IInstantiator` under the scene `UIRoot`. `UIInitializer` writes the
+scene `Canvas`/`UIRoot` into `WindowFactory` through `SceneInitializationInstaller`.
+`SettingsView` is now a `BaseWindow` opened by `MainMenu` through
+`WindowService.Open(WindowId.SettingsWindow)`. In `Gameplay`, the scene-owned
+HUD `GearButton` opens the dynamic `WindowId.GameplayMenuWindow`; `Restart`
+backs that gameplay menu modal. This is not a result/game-over window, and
+`GameOverOrParagonState` must not open it unless explicitly redesigned. Do not
+inject concrete windows such as `SettingsView` directly into menu UI.
 
 **Zenject DI** wires dependencies. No `new SomeService()` for DI-owned services - bind them in installers and inject them. `IInitializable` is allowed for local setup, UI presenters, settings, cached references, and other non-flow initialization. Do not use `IInitializable` to enter gameplay states, load gameplay scenes, or start active gameplay loops.
 
@@ -116,25 +134,28 @@ Three installer types:
 
 **MVP** used for UI: `Model` (data + PlayerPrefs), `Presenter` (`IInitializable`, UI/local logic), `View` (MonoBehaviour, UI only). See `Audio/` for the canonical example. Presenters must not become lifecycle intermediaries for gameplay flow.
 
+**Gameplay choice UI** uses MVP direct service calls for now. Presenters/windows may read display data from services/static data and may call high-level feature/domain methods such as `BuyItem(id)`, `SelectUpgrade(id)`, or `ApplyChoice(id)` directly. Keep the operation encapsulated in one owning service; do not spread one UI click across low-level calls such as `RemoveGold`, `AddPurchasedItem`, `ApplyBoost`, and `SaveProgress` from the presenter. The `ecs-survivors` request pattern (`UpgradeRequest`/`BuyRequest` entities processed later by systems) is documented as a deferred option, not the current default.
+
 **Repositories** - inherit `Repository<T> : ScriptableObject` where `T : Definition` for any game data. Bind with `FromInstance()` in an installer.
 
-**UniTask** for all async and time-based operations. Coroutines are **never** used - including `WaitForSeconds`, `WaitUntil`, and similar. Use `UniTask.Delay`, `UniTask.WaitUntil`, `async UniTaskVoid` instead. This applies to all code: MonoBehaviour components, services, states.
+**UniTask** for all async and time-based operations. Coroutines are **never** used, including Unity yield instructions such as `WaitForSeconds`, `UnityEngine.WaitUntil`, and similar. Use `UniTask.Delay`, `UniTask.WaitUntil`, `async UniTaskVoid` instead. This applies to all code: MonoBehaviour components, services, states.
 
-**Component-based approach** - gameplay logic outside UI is built with `MonoBehaviour` components. One responsibility equals one component. Dependencies between gameplay components should use `[SerializeField]` or `GetComponent`, not Zenject. Example: `Gameplay/Units/` may split entity/view, movement, health, and interaction components.
+**Component-based approach** - runtime Unity objects are built from small `MonoBehaviour` components. One responsibility equals one component. Dependencies between gameplay components should use `[SerializeField]` or `GetComponent`, not Zenject. State-owned lifecycle helpers such as factories and spawners can be plain DI services that are started, updated, and cleaned by states.
 
 ### Adding new things
 
 **New gameplay feature:**
 1. Create a `Gameplay/FeatureName/` folder.
-2. Put each gameplay behavior into a separate `MonoBehaviour` in that folder.
-3. If the feature needs ScriptableObject data, create a `GameplayData/Definitions/FeatureName/` folder.
+2. Put runtime object behavior into focused `MonoBehaviour` components.
+3. Put factories/spawners/lifecycle helpers in the same feature folder as plain DI services when a state owns their lifecycle.
+4. If the feature needs ScriptableObject data, create a `GameplayData/Definitions/FeatureName/` folder.
 
 **New service:**
-1. Define interface in `Domain/`
-2. Implement class
-3. Bind in installer: `Container.BindInterfacesAndSelfTo<MyService>().AsSingle()`
-4. If the service has active lifecycle, call its explicit lifecycle methods from a state
-5. Inject via `[Inject]`
+1. Define the interface beside the feature/service implementation, or in the relevant `Domain/` folder for subsystems that already use one.
+2. Implement the class.
+3. Bind in an installer with `Container.Bind<IMyService>().To<MyService>().AsSingle()` or `Container.BindInterfacesAndSelfTo<MyService>().AsSingle()` when self binding is also needed.
+4. If the service has active lifecycle, call its explicit lifecycle methods from a state.
+5. Inject via `[Inject]`.
 
 **New game state:**
 1. `public class MyState : IState, IGameState`
@@ -162,7 +183,7 @@ Three installer types:
 - Use serialized auto-properties for inspector-exposed fields: `[field: SerializeField] private GameObject Obj { get; set; }`. Do not add new `[SerializeField] private GameObject _obj;` fields.
 - When converting existing serialized fields to serialized auto-properties, update scene/prefab YAML references to the backing field name, for example `<Obj>k__BackingField`.
 - Prefer `List<T>` over arrays (`T[]`) where possible, including `[field: SerializeField]` collections
-- Usings grouped: System -> UnityEngine -> third-party -> project
+- For new files, prefer usings grouped as System -> UnityEngine -> third-party -> project. In existing files, keep the surrounding order unless the file is already being cleaned up.
 
 ## Validation
 

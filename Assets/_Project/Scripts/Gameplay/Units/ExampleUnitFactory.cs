@@ -7,20 +7,22 @@ namespace _Project.Scripts.Gameplay.Units
 {
     public class ExampleUnitFactory : IExampleUnitFactory
     {
-        private const string ExampleUnitPrefabPath = "Gameplay/Units/ExampleUnit";
+        private const string EXAMPLE_UNIT_PREFAB_PATH = "Gameplay/Units/ExampleUnit";
 
         private readonly List<ExampleUnit> _createdUnits = new();
 
         [Inject] private IAssetProvider _assetProvider;
         [Inject] private IInstantiator _instantiator;
 
+        public ExampleUnit CurrentUnit { get; private set; }
+
         public ExampleUnit Create(Vector3 at)
         {
-            ExampleUnit prefab = _assetProvider.LoadAsset<ExampleUnit>(ExampleUnitPrefabPath);
+            ExampleUnit prefab = _assetProvider.LoadAsset<ExampleUnit>(EXAMPLE_UNIT_PREFAB_PATH);
 
             if (prefab == null)
             {
-                Debug.LogError($"ExampleUnit prefab is missing at Resources path '{ExampleUnitPrefabPath}'.");
+                Debug.LogError($"ExampleUnit prefab is missing at Resources path '{EXAMPLE_UNIT_PREFAB_PATH}'.");
                 return null;
             }
 
@@ -32,6 +34,7 @@ namespace _Project.Scripts.Gameplay.Units
 
             unit.name = nameof(ExampleUnit);
             _createdUnits.Add(unit);
+            CurrentUnit = unit;
 
             return unit;
         }
@@ -45,6 +48,7 @@ namespace _Project.Scripts.Gameplay.Units
             }
 
             _createdUnits.Clear();
+            CurrentUnit = null;
         }
     }
 }

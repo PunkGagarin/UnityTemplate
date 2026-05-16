@@ -2,10 +2,12 @@ using _Project.Scripts.Gameplay.Cameras.Provider;
 using _Project.Scripts.Gameplay.Common.Physics;
 using _Project.Scripts.Gameplay.Common.Random;
 using _Project.Scripts.Gameplay.Common.Time;
+using _Project.Scripts.Gameplay.Enemies;
 using _Project.Scripts.Infrastructure.GameStates.States;
 using _Project.Scripts.Infrastructure.GameStates;
 using _Project.Scripts.Gameplay.Level;
 using _Project.Scripts.Gameplay.Units;
+using _Project.Scripts.Gameplay.Windows;
 using _Project.Scripts.Infrastructure.AssetManagement;
 using _Project.Scripts.Infrastructure.GameStates.Factory;
 using UnityEngine;
@@ -24,6 +26,7 @@ namespace _Project.Scripts.Infrastructure
             BindCameraProvider();
             BindCommonServices();
             BindGameplayExample();
+            BindWindowInfrastructure();
         }
 
         private void BindAssetManagement()
@@ -35,6 +38,14 @@ namespace _Project.Scripts.Infrastructure
         {
             Container.Bind<ILevelStartPointProvider>().To<LevelStartPointProvider>().AsSingle();
             Container.Bind<IExampleUnitFactory>().To<ExampleUnitFactory>().AsSingle();
+            Container.Bind<IEnemyFactory>().To<EnemyFactory>().AsSingle();
+            Container.Bind<IEnemySpawner>().To<EnemySpawner>().AsSingle();
+        }
+
+        private void BindWindowInfrastructure()
+        {
+            Container.Bind<IWindowService>().To<WindowService>().AsSingle();
+            Container.Bind<IWindowFactory>().To<WindowFactory>().AsSingle();
         }
 
         private void BindCameraProvider()

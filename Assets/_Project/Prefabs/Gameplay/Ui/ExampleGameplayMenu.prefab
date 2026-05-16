@@ -464,8 +464,8 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 68e13c053b65ecf4aa942f5c87dde3e0, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Restart
-  content: {fileID: 123648876707785297}
+  m_EditorClassIdentifier: Assembly-CSharp::_Project.Scripts.Restart
+  <Content>k__BackingField: {fileID: 123648876707785297}
   <RestartButton>k__BackingField: {fileID: 5056512365204694917}
   <MainMenuButton>k__BackingField: {fileID: 1973299675380501199}
 --- !u!1 &7585423998032151040

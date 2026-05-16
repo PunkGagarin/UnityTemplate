@@ -97,6 +97,56 @@ state/factory -> path/provider -> asset load -> instantiation.
   `UnityRandomService`, `ICameraProvider`/`CameraProvider`. `IPhysicsService`/
   `PhysicsService` добавлены без ECS-зависимостей: вместо `GameEntity` и
   `ICollisionRegistry` используются Unity-neutral `Collider2D`/`RaycastHit2D`.
+- `[done]` Example feature - enemy spawner.
+  Добавлены `EnemyUnit`, `IEnemyFactory`/`EnemyFactory` и
+  `IEnemySpawner`/`EnemySpawner`. `EnemyFactory` использует reference-backed
+  asset chain `Resources path "Gameplay/Enemies/EnemyUnit" -> IAssetProvider ->
+  IInstantiator`. Lifecycle mapping взят из `BattleLoopState.OnUpdate()` ->
+  `BattleFeature.Execute()` -> `EnemySpawnSystem.Execute()`, но без ECS/Feature
+  слоя. `GameplayState` запускает spawner с player transform, тикает его в
+  `Update()` и чистит через `ExitOnEndOfFrame()`.
+- `[done]` UI reference audit.
+  UI lifecycle в `ecs-survivors` разобран по классам `UIInitializer`,
+  `WindowService`, `WindowFactory`, `BaseWindow`, `WindowsConfig`, `HomeHUD`,
+  `GameOverWindow`, `LevelUpWindow`, `AbilityCard`,
+  `OpenLevelUpWindowSystem`, `UpgradeAbilityOnRequestSystem`, `ShopWindow`,
+  `ShopItem`, `BuyItemOnRequestSystem`, `HomeScreenState` и `GameOverState`.
+- `[done]` UI Step 1 - add window infrastructure.
+  Добавлены `WindowId`, `BaseWindow`, `IWindowService`, `WindowService`,
+  `IWindowFactory`, `WindowFactory`, `WindowsConfig` и `WindowConfig`.
+  `WindowFactory` берет prefab из `Resources/Configs/Windows/windowConfig` и
+  создает окно через Zenject `IInstantiator`, без дополнительных flow слоев.
+- `[done]` UI Step 2 - add scene UI root initialization.
+  Добавлен `UIInitializer`; `MainMenu` и `Gameplay` сцены регистрируют его
+  через `SceneInitializationInstaller`, а текущий scene `Canvas` используется
+  как `UIRoot`.
+- `[done]` UI Step 3 - migrate settings to window flow.
+  `MainMenu` больше не инжектит `SettingsView`; кнопка settings вызывает
+  `WindowService.Open(WindowId.SettingsWindow)`. `SettingsView` стал
+  `BaseWindow`, создается через `WindowFactory` и закрывается через
+  `WindowService.Close(...)`.
+- `[done]` UI Step 4 - migrate gameplay menu modal to window flow.
+  `ExampleGameplayMenu` удален из `Gameplay` scene как preplaced prefab.
+  Scene HUD `GearButton` открывает `WindowId.GameplayMenuWindow`; `Restart`
+  стал `BaseWindow`, закрывает себя через `WindowService.Close(...)` и затем
+  вызывает state transition. Это не result/game-over window.
+- `[done]` UI Step 5 - keep scene HUDs simple.
+  `MainMenu` остается scene HUD аналогом `HomeHUD`: `Start` вызывает
+  `GameStateMachine.Enter<LoadGameplayState>()`, `Settings` вызывает
+  `WindowService.Open(WindowId.SettingsWindow)`, direct `SceneLoader` нет.
+- `[done]` UI Step 6 - document MVP direct service-call rule.
+  Request transport pattern из `ecs-survivors` зафиксирован как deferred option.
+  Текущий UnityTemplate rule: gameplay/meta choice UI в MVP может напрямую
+  вызывать high-level feature/domain services; один сервис инкапсулирует effect.
+- `[done]` UI Step 7 - cleanup and static validation.
+  Статически проверено: direct `SceneLoader` остался в loading states,
+  `SettingsView` и `Restart` наследуют `BaseWindow`, `WindowId` entries есть в
+  `Resources/Configs/Windows/windowConfig`, `UIInitializer` зарегистрирован в
+  `MainMenu` и `Gameplay` сценах.
+- `[blocked]` Unity validation after UI window migration.
+  Требует Play Mode в Unity Editor: проверить `MainMenu -> Settings -> Apply`,
+  `MainMenu -> Settings -> Cancel`, `MainMenu -> Gameplay`, и в gameplay
+  `GearButton -> GameplayMenuWindow -> Restart/MainMenu`.
 - `[done]` Unity validation after Step 2.
   Проект запускается в Unity Editor.
 - `[done]` Unity validation after `LoadMainMenuState`.
@@ -382,11 +432,15 @@ BootstrapState
 
 ## UI Правило
 
-Как в `ecs-survivors`:
+Текущий выбор для `UnityTemplate`: MVP direct service calls.
 
 ```text
 UI -> GameStateMachine.Enter(...)
+UI -> WindowService.Open/Close(...)
+UI -> query UI-facing services for display data
+UI -> call high-level feature/domain services for gameplay/meta choices
 UI -> not SceneLoader.LoadScene(...)
+UI -> not own gameplay service lifecycle or cleanup
 ```
 
 Допустимо:
@@ -408,7 +462,354 @@ private async void StartGame()
 ```
 
 Смысл: UI выбирает следующий state, но загрузкой сцены и cleanup занимается
-сам state. Дополнительную прослойку между UI и `GameStateMachine` не вводим.
+сам state. Для gameplay/meta choice меню в текущем template UI/Presenter может
+напрямую вызывать high-level service method, если этот service сам
+инкапсулирует проверку и применение effect.
+Дополнительную прослойку между UI и `GameStateMachine` не вводим.
+
+## UI Lifecycle Reference
+
+В `ecs-survivors` UI lifecycle состоит из нескольких разных потоков:
+
+```text
+Scene HUD
+-> scene object already exists
+-> inject GameStateMachine and WindowService
+-> button click calls GameStateMachine.Enter(...) or WindowService.Open(...)
+```
+
+```text
+Modal window
+-> WindowService.Open(WindowId)
+-> WindowFactory.CreateWindow(WindowId)
+-> WindowsConfig gives prefab
+-> Zenject IInstantiator creates BaseWindow under scene UIRoot
+-> window buttons call WindowService.Close(...) and/or GameStateMachine.Enter(...)
+```
+
+```text
+Gameplay choice window
+-> gameplay/meta system opens window through WindowService
+-> window reads options/state from UI-facing services/static data
+-> player selects an option
+-> window writes a concrete request into a context-owned request transport
+-> gameplay/meta execute loop reads that transport
+-> processor system calls domain service and consumes/destroys request
+```
+
+### Reference classes
+
+- `Infrastructure/Installers/UIInitializer.cs`
+  Scene initializer with `RectTransform UIRoot`. On initialize it calls
+  `IWindowFactory.SetUIRoot(UIRoot)`.
+- `Gameplay/Windows/WindowService.cs`
+  Stores opened `BaseWindow` instances, opens through factory, closes by
+  destroying the opened window GameObject.
+- `Gameplay/Windows/WindowFactory.cs`
+  Stores current `UIRoot`, gets prefab by `WindowId`, instantiates prefab with
+  Zenject `IInstantiator` under `UIRoot`.
+- `Gameplay/Windows/BaseWindow.cs`
+  Window MonoBehaviour lifecycle: `Awake -> OnAwake`, `Start -> Initialize +
+  SubscribeUpdates`, `OnDestroy -> Cleanup -> UnsubscribeUpdates`.
+- `Gameplay/Windows/Configs/WindowsConfig.cs`
+  ScriptableObject list of `WindowConfig { WindowId, GameObject Prefab }`.
+- `Meta/UI/HUD/HomeHUD.cs`
+  Scene HUD. Button calls `stateMachine.Enter<LoadingBattleState, string>(...)`;
+  another button calls `windowService.Open(WindowId.ShopWindow)`.
+- `Gameplay/GameOver/UI/GameOverWindow.cs`
+  Dynamic window. Button closes itself through `WindowService`, then calls
+  `stateMachine.Enter<LoadingHomeScreenState>()`.
+- `Infrastructure/States/GameStates/GameOverState.cs`
+  State opens `GameOverWindow` through `IWindowService.Open(...)`.
+- `Gameplay/Features/LevelUp/Systems/OpenLevelUpWindowSystem.cs`
+  Gameplay system opens `LevelUpWindow` when level-up happens.
+- `Gameplay/Features/LevelUp/Windows/LevelUpWindow.cs`
+  Dynamic gameplay choice window. It reads upgrade options from
+  `IAbilityUpgradeService`, reads display data from `IStaticDataService`,
+  creates ability cards, and on selection writes `UpgradeRequest` into
+  `GameContext`.
+- `Gameplay/Features/LevelUp/Systems/UpgradeAbilityOnRequestSystem.cs`
+  Gameplay system reads `GameContext` entities with `AbilityId` +
+  `UpgradeRequest`, calls `IAbilityUpgradeService.UpgradeAbility(...)`, and
+  marks the request entity for destruction.
+- `Meta/UI/Shop/ShopWindow.cs`
+  Dynamic meta choice window. It reads available items from `IShopUIService`,
+  observes `IStorageUIService`, and creates item views.
+- `Meta/UI/Shop/Items/ShopItem.cs`
+  UI item writes `BuyRequest` into `MetaContext` on click; it does not spend
+  currency directly.
+- `Meta/UI/Shop/Systems/BuyItemOnRequestSystem.cs`
+  Meta system reads `MetaContext` entities with `BuyRequest` + `ShopItemId`,
+  checks storage, updates storage, calls `IShopUIService.UpdatePurchasedItem(...)`,
+  and marks the request entity for destruction.
+
+### What "request" means in the reference
+
+В `ecs-survivors` request - это не абстрактный event bus и не прямой вызов
+effect-сервиса. Это короткоживущая entity в конкретном context.
+
+Важно для текущего template: этот pattern остается справкой и deferred option,
+а не обязательной реализацией. Мы пока выбираем MVP direct service calls.
+
+Level-up:
+
+```csharp
+CreateEntity.Empty()
+    .AddAbilityId(id)
+    .isUpgradeRequest = true;
+```
+
+Куда отправляется: в `GameContext`.
+
+Кто читает: `UpgradeAbilityOnRequestSystem`, через matcher `AbilityId` +
+`UpgradeRequest`.
+
+Кто применяет effect: `UpgradeAbilityOnRequestSystem` вызывает
+`IAbilityUpgradeService.UpgradeAbility(...)`, потом помечает request entity на
+destruction.
+
+Shop:
+
+```csharp
+CreateMetaEntity.Empty()
+    .AddShopItemId(Id)
+    .isBuyRequest = true;
+```
+
+Куда отправляется: в `MetaContext`.
+
+Кто читает: `BuyItemOnRequestSystem`, через matcher `BuyRequest` +
+`ShopItemId`.
+
+Кто применяет effect: `BuyItemOnRequestSystem` проверяет storage, списывает
+gold, обновляет purchased state/UI cache и помечает request entity на
+destruction.
+
+Если позже вернемся к request pattern, для `UnityTemplate` без ECS это можно
+будет маппить не в entity, а в явно названный request transport: маленький DI
+service/queue, который только хранит requests. Этот transport не применяет
+effect сам.
+
+```text
+LevelUpWindow
+-> abilityUpgradeRequests.RequestUpgrade(abilityId)
+
+GameplayState.Update()
+-> abilityUpgradeProcessor.ProcessRequests()
+-> abilityUpgradeRequests.ConsumeAll()
+-> abilityUpgradeService.ApplyUpgrade(...)
+```
+
+Сейчас это не внедряем. Вернуться к request transport стоит, если direct calls
+начнут ломать порядок исполнения, pause/close lifecycle, тестируемость или
+начнут размазывать один gameplay/meta effect по нескольким UI presenters.
+
+### What This Means For UnityTemplate
+
+```text
+MainMenu
+-> scene HUD like HomeHUD
+-> StartGame calls GameStateMachine.Enter<LoadGameplayState>()
+-> Settings calls WindowService.Open(WindowId.SettingsWindow)
+-> never calls SceneLoader
+```
+
+```text
+SettingsWindow / GameplayMenuWindow
+-> BaseWindow prefab
+-> opened by WindowService
+-> instantiated under UIRoot set by UIInitializer
+-> closes itself through WindowService
+-> may request state transition through GameStateMachine
+```
+
+```text
+LevelUpWindow / ShopWindow style gameplay menus
+-> read display data from UI-facing services/static data
+-> subscribe to UI-facing service events when needed
+-> presenter/window calls one high-level feature/domain service method
+-> service validates and applies gameplay/meta effect
+-> UI does not split effect across low-level services
+```
+
+Не добавляем отдельный `UIFlowService`, presenter/controller слой для flow,
+generic scene scope или registry. В референсе их нет.
+
+## UI Migration Plan
+
+### UI Step 1. Add window infrastructure
+
+Добавить минимальный набор из `ecs-survivors`:
+
+```text
+Gameplay/Windows/BaseWindow
+Gameplay/Windows/WindowId
+Gameplay/Windows/IWindowService
+Gameplay/Windows/WindowService
+Gameplay/Windows/IWindowFactory
+Gameplay/Windows/WindowFactory
+Gameplay/Windows/Configs/WindowConfig
+Gameplay/Windows/Configs/WindowsConfig
+```
+
+Bind в `ProjectInstaller`:
+
+```text
+Container.Bind<IWindowService>().To<WindowService>().AsSingle()
+Container.Bind<IWindowFactory>().To<WindowFactory>().AsSingle()
+```
+
+Prefab lookup должен быть config-backed, как в `ecs-survivors`.
+Если для этого потребуется переносить часть `StaticDataService`, сначала
+сверяем scope: reference path is `StaticDataService.GetWindowPrefab(id)`.
+
+### UI Step 2. Add scene UI root initialization
+
+Добавить `UIInitializer` по примеру `ecs-survivors`:
+
+```text
+UIInitializer
+-> [field: SerializeField] RectTransform UIRoot
+-> [Inject] IWindowFactory
+-> Initialize()
+-> windowFactory.SetUIRoot(UIRoot)
+```
+
+В сценах, где открываются dynamic windows, добавить root object `UIRoot` и
+зарегистрировать `UIInitializer` через существующий `SceneInitializationInstaller`
+паттерн.
+
+### UI Step 3. Migrate SettingsView to window flow
+
+Текущий `SettingsView` больше не должен быть direct injected dependency в
+`MainMenu`.
+
+Целевой flow:
+
+```text
+MainMenu.SettingsButton
+-> windowService.Open(WindowId.SettingsWindow)
+-> WindowFactory creates SettingsWindow prefab under UIRoot
+```
+
+`SettingsView` становится `BaseWindow` или отдельным `SettingsWindow`, сохраняя
+существующий `SettingsPresenter` и audio/localization logic внутри окна.
+
+### UI Step 4. Migrate gameplay menu modal to window flow
+
+Текущий `Restart` prefab используется как gameplay menu modal. Это не
+result/game-over UI: он открывается scene HUD кнопкой-шестеренкой, а не
+`GameOverOrParagonState`.
+
+Целевой flow:
+
+```text
+Gameplay scene Canvas
+-> GearButton
+-> GameplayMenuButton.OpenGameplayMenu()
+-> windowService.Open(WindowId.GameplayMenuWindow)
+
+GameplayMenuWindow.RestartButton
+-> windowService.Close(Id)
+-> stateMachine.Enter<LoadGameplayState>()
+
+GameplayMenuWindow.MainMenuButton
+-> windowService.Close(Id)
+-> stateMachine.Enter<LoadMainMenuState>()
+```
+
+Не открываем result window из `GameplayState` напрямую, если это станет
+responsibility конкретного result state. State owns lifecycle; window only
+asks for state transition.
+
+### UI Step 5. Keep MainMenu as scene HUD
+
+`MainMenu` остается scene object аналогом `HomeHUD`.
+
+Допустимо:
+
+```text
+MainMenu.StartGame -> GameStateMachine.Enter<LoadGameplayState>()
+MainMenu.OpenSettings -> WindowService.Open(WindowId.SettingsWindow)
+```
+
+Недопустимо:
+
+```text
+MainMenu -> SceneLoader.LoadScene(...)
+MainMenu -> custom UIFlowService -> StateMachine
+```
+
+### UI Step 6. Use MVP direct service calls for gameplay choices
+
+Reference pattern из `LevelUpWindow` и `ShopWindow` остается известным, но для
+текущего `UnityTemplate` откладываем request transport. MVP проще: presenter
+может напрямую дергать high-level service.
+
+Допустимо:
+
+```text
+LevelUpWindow
+-> abilityUpgradeService.GetUpgradeOptions()
+-> staticData.GetAbilityLevel(...)
+-> player selects card
+-> abilityUpgradeService.UpgradeAbility(id)
+
+ShopWindow
+-> shopUIService.GetAvailableShopItems
+-> storageUIService events/current values
+-> shopService.BuyItem(id)
+```
+
+Недопустимо:
+
+```text
+ShopItem
+-> storage.RemoveGold(...)
+-> purchasedItems.Add(...)
+-> boostService.Apply(...)
+-> saveService.Save(...)
+```
+
+Правило не в том, что UI вообще не может менять gameplay/meta state. Правило в
+том, что один UI action должен идти в один owning feature/domain service, а не
+размазывать effect по набору low-level сервисов.
+
+```text
+Good:
+ShopPresenter -> shopService.BuyItem(id)
+
+Bad:
+ShopPresenter -> wallet.RemoveGold(price)
+ShopPresenter -> purchases.Add(id)
+ShopPresenter -> boostService.Apply(id)
+ShopPresenter -> saveService.Save()
+```
+
+Request transport можно вернуть позже, если появятся реальные симптомы:
+
+- несколько UI entry points применяют один и тот же effect по-разному;
+- важен строгий порядок применения effect внутри active gameplay/meta loop;
+- закрытие окна, pause или смена state конфликтуют с direct service call;
+- стало трудно тестировать или логировать решения игрока отдельно от effect.
+
+### UI Step 7. Cleanup and validation
+
+Проверить:
+
+- UI buttons either call `GameStateMachine.Enter(...)`,
+  `WindowService.Open/Close(...)`, or one high-level feature/domain service;
+- gameplay/meta choice windows may query UI-facing services/static data;
+- gameplay/meta choice windows do not split one effect across low-level
+  services from UI;
+- no UI component calls `SceneLoader`;
+- dynamic windows inherit `BaseWindow`;
+- windows unsubscribe in `Cleanup/UnsubscribeUpdates`;
+- `UIInitializer` sets `UIRoot` before any state opens a window in that scene;
+- `WindowsConfig` contains every `WindowId` used by code;
+- Play Mode validates `MainMenu -> Settings`, `MainMenu -> Gameplay`,
+  `GearButton -> GameplayMenuWindow -> Restart`,
+  `GearButton -> GameplayMenuWindow -> MainMenu`.
 
 ## DI Rule
 
@@ -501,6 +902,13 @@ GameplayEnterState.Enter()
    -> IAssetProvider.LoadAsset<ExampleUnit>(path)
    -> IInstantiator.InstantiatePrefabForComponent(...)
 -> stateMachine.Enter<GameplayState>()
+
+GameplayState.Enter()
+-> enemySpawner.Start(exampleUnitFactory.CurrentUnit.transform)
+
+GameplayState.Update()
+-> enemySpawner waits for first gameplay click
+-> enemySpawner spawns EnemyUnit near player every 3 seconds
 ```
 
 ### Шаг 4. Добавить concrete providers для scene references
@@ -552,8 +960,9 @@ GameplayEnterState.Enter()
 -> exampleUnitFactory.Create(...)
 
 GameplayState.ExitOnEndOfFrame()
+-> enemySpawner.Cleanup()
 -> exampleUnitFactory.Cleanup()
--> destroy created ExampleUnit objects
+-> destroy created EnemyUnit and ExampleUnit objects
 ```
 
 ### Шаг 7. Добавить минимальный end-of-frame exit
@@ -590,6 +999,6 @@ stateMachine.Enter<NextState>()
 ```text
 Scene is data and references.
 DI wires objects.
-UI requests state transitions.
+UI asks for state transitions or calls one high-level gameplay/meta service.
 State owns lifecycle.
 ```

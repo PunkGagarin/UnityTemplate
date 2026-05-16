@@ -1,14 +1,15 @@
 using _Project.Scripts.Audio.Domain;
-using _Project.Scripts.Localization;
-using _Project.Scripts.Utils;
+using _Project.Scripts.Gameplay.Windows;
 using UnityEngine;
 using UnityEngine.UI;
 using Zenject;
 
 namespace _Project.Scripts.Audio.View
 {
-    public class SettingsView : ContentUi
+    public class SettingsView : BaseWindow
     {
+        [field: SerializeField] private GameObject Content { get; set; }
+
         [SerializeField] private Slider _masterVolumeSlider, _musicVolumeSlider, _soundVolumeSlider;
         [SerializeField] private Button _closeButton, _applyButton;
         [SerializeField] private Toggle _enToggle, _ruToggle;
@@ -16,9 +17,21 @@ namespace _Project.Scripts.Audio.View
 
         [Inject] private SettingsPresenter _settingsPresenter;
         [Inject] private AudioService _audioService;
-        [Inject] private LanguageService _languageService;
+        [Inject] private IWindowService _windowService;
 
-        private void Awake()
+        protected override void OnAwake()
+        {
+            Id = WindowId.SettingsWindow;
+        }
+
+        protected override void Initialize()
+        {
+            _settingsPresenter.AttachView(this);
+            _settingsPresenter.OnOpen();
+            Content.SetActive(true);
+        }
+
+        protected override void SubscribeUpdates()
         {
             _masterVolumeSlider.onValueChanged.AddListener(UpdateMasterVolume);
             _musicVolumeSlider.onValueChanged.AddListener(UpdateMusicVolume);
@@ -29,7 +42,7 @@ namespace _Project.Scripts.Audio.View
             _ruToggle.onValueChanged.AddListener(OnRuToggleValueChanged);
         }
 
-        private void OnDestroy()
+        protected override void UnsubscribeUpdates()
         {
             _masterVolumeSlider.onValueChanged.RemoveListener(UpdateMasterVolume);
             _musicVolumeSlider.onValueChanged.RemoveListener(UpdateMusicVolume);
@@ -40,26 +53,22 @@ namespace _Project.Scripts.Audio.View
             _ruToggle.onValueChanged.RemoveListener(OnRuToggleValueChanged);
         }
 
-        public void Open()
-        {
-            _settingsPresenter.AttachView(this);
-            _settingsPresenter.OnOpen();
-            Show();
-        }
-
         private void SaveSettings()
         {
             _audioService.PlaySound(Sounds.buttonClick.ToString());
             _settingsPresenter.SaveChanges();
-            Hide();
+            Close();
         }
 
         private void UndoChanges()
         {
             _audioService.PlaySound(Sounds.buttonClick.ToString());
             _settingsPresenter.UndoChanges();
-            Hide();
+            Close();
         }
+
+        private void Close() =>
+            _windowService.Close(Id);
 
         private void UpdateSoundVolume(float newVolume)
         {

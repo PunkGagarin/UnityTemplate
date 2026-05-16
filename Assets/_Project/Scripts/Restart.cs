@@ -1,30 +1,31 @@
 using _Project.Scripts.Infrastructure.GameStates;
 using _Project.Scripts.Infrastructure.GameStates.States;
+using _Project.Scripts.Utils;
 using UnityEngine;
 using UnityEngine.UI;
 using Zenject;
 
-public class Restart : MonoBehaviour
+public class Restart : ContentUi
 {
     
     [Inject] private  GameStateMachine _stateMachine;
     
-    [SerializeField]
-    private Button _restartButton;
+    [field: SerializeField]
+    private Button RestartButton { get; set; }
     
-    [SerializeField]
-    private Button _mainMenuButton;
+    [field: SerializeField]
+    private Button MainMenuButton{ get; set; }
 
     private void Start()
     {
-        _restartButton.onClick.AddListener(RestartGameplay);
+        RestartButton.onClick.AddListener(RestartGameplay);
         
-        _mainMenuButton.onClick.AddListener(OpenMainMenu);
+        MainMenuButton.onClick.AddListener(OpenMainMenu);
     }
 
     private void OpenMainMenu()
     {
-        _stateMachine.Enter<MainMenuState>();
+        _stateMachine.Enter<LoadMainMenuState>();
     }
 
     private void RestartGameplay()

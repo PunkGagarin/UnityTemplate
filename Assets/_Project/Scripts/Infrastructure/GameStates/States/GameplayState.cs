@@ -1,15 +1,23 @@
-﻿namespace _Project.Scripts.Infrastructure.GameStates.States
+using _Project.Scripts.Gameplay.Units;
+using Zenject;
+
+namespace _Project.Scripts.Infrastructure.GameStates.States
 {
-    internal class GameplayState : IState, IGameState
+    internal class GameplayState : EndOfFrameExitState
     {
-        public void Exit()
+        [Inject] private IExampleUnitFactory _exampleUnitFactory;
+
+        public override void Enter()
         {
-            
         }
 
-        public void Enter()
+        protected override void OnUpdate()
         {
-            
+        }
+
+        protected override void ExitOnEndOfFrame()
+        {
+            _exampleUnitFactory.Cleanup();
         }
     }
 }

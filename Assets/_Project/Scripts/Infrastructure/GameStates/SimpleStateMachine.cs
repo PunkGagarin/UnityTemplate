@@ -1,44 +1,47 @@
-﻿using System;
-using System.Collections.Generic;
+using _Project.Scripts.Infrastructure.GameStates.Factory;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
+using Zenject;
 
 namespace _Project.Scripts.Infrastructure.GameStates
 {
     public class SimpleStateMachine<T> : IGameStateMachine<T>, IPayloadStateMachine<T>
     {
-
         private T _currentState;
-        private Dictionary<Type, T> _states = new();
 
-        public void Register(T state)
-        {
-            Debug.Log($" Register state {state.GetType().Name}");
-            _states.Add(state.GetType(), state);
-        }
+        [Inject] private IStateFactory _stateFactory;
 
-        public void Enter<TState>() where TState : class, T, IState
+        protected T CurrentState => _currentState;
+
+        public async void Enter<TState>() where TState : class, T, IState
         {
-            Debug.Log($"Tryint to change state from  {_currentState?.GetType().Name} to {typeof(TState).Name}");
-            IState state = ChangeCurrentState<TState>();
+            Debug.Log($"Trying to change state from {_currentState?.GetType().Name} to {typeof(TState).Name}");
+            IState state = await ChangeCurrentState<TState>();
             state.Enter();
         }
 
-        public void Enter<TState, TPayload>(TPayload payload) where TState : class, T, IPayloadState<TPayload>
+        public async void Enter<TState, TPayload>(TPayload payload) where TState : class, T, IPayloadState<TPayload>
         {
-            TState state = ChangeCurrentState<TState>();
+            TState state = await ChangeCurrentState<TState>();
             state.Enter(payload);
         }
 
-        private TState ChangeCurrentState<TState>() where TState : class, T, IExitableState
+        private async UniTask<TState> ChangeCurrentState<TState>() where TState : class, T, IExitableState
         {
-            if (_currentState is IExitableState state)
+            if (_currentState is IDeferredExitState deferredExitState)
+            {
+                deferredExitState.BeginExit();
+                await UniTask.WaitUntil(() => deferredExitState.ExitCompleted);
+                deferredExitState.EndExit();
+            }
+            else if (_currentState is IExitableState state)
+            {
                 state.Exit();
+            }
 
-            var newState = _states[typeof(TState)] as TState;
+            var newState = _stateFactory.GetState<TState>();
             _currentState = newState;
             return newState;
         }
-
     }
-
 }

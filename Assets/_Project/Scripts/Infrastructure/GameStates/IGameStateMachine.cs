@@ -2,7 +2,6 @@ namespace _Project.Scripts.Infrastructure.GameStates
 {
     public interface IGameStateMachine<T>
     {
-        void Register(T state);
         void Enter<TState>() where TState : class, T, IState;
     }
 

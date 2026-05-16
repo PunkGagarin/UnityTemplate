@@ -14,10 +14,9 @@ namespace _Project.Scripts.Infrastructure.GameStates.States
             _loadingCurtain.Show();
             //load resources
             await _sceneLoader.LoadScene(SceneEnum.Gameplay);
-            //create buildings & units
             _loadingCurtain.Hide();
             
-            _stateMachine.Enter<GameplayState>();
+            _stateMachine.Enter<GameplayEnterState>();
         }
 
         public void Exit()

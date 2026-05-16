@@ -2,7 +2,6 @@
 using _Project.Scripts.Audio.View;
 using _Project.Scripts.Infrastructure.GameStates;
 using _Project.Scripts.Infrastructure.GameStates.States;
-using _Project.Scripts.Infrastructure.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
 using Zenject;
@@ -21,7 +20,6 @@ namespace _Project.Scripts
         private Button _credits;
 
 
-        [Inject] private SceneLoader _sceneLoader;
         [Inject] private GameStateMachine _stateMachine;
         [Inject] private AudioService _audio;
         [Inject] private SettingsView _settingsView;

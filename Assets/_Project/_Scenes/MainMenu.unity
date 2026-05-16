@@ -538,6 +538,7 @@ GameObject:
   m_Component:
   - component: {fileID: 668293757}
   - component: {fileID: 668293756}
+  - component: {fileID: 668293758}
   m_Layer: 0
   m_Name: SceneContext
   m_TagString: Untagged
@@ -558,7 +559,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _scriptableObjectInstallers: []
-  _monoInstallers: []
+  _monoInstallers:
+  - {fileID: 668293758}
   _installerPrefabs: []
   _autoRun: 1
   OnPreInstall:
@@ -576,6 +578,20 @@ MonoBehaviour:
   _parentNewObjectsUnderSceneContext: 0
   _contractNames: []
   _parentContractNames: []
+--- !u!114 &668293758
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 668293755}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6794015cb2fe4ac4a351c832e047bb75, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  <Initializers>k__BackingField:
+  - {fileID: 1443979513}
 --- !u!4 &668293757
 Transform:
   m_ObjectHideFlags: 0
@@ -1184,6 +1200,7 @@ GameObject:
   - component: {fileID: 1443979511}
   - component: {fileID: 1443979510}
   - component: {fileID: 1443979509}
+  - component: {fileID: 1443979513}
   m_Layer: 5
   m_Name: Canvas
   m_TagString: Untagged
@@ -1275,6 +1292,19 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 0}
+--- !u!114 &1443979513
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1443979508}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b93497bdbd5b47129d96c7c7bc2c0e62, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  <UIRoot>k__BackingField: {fileID: 1443979512}
 --- !u!1 &1518078378
 GameObject:
   m_ObjectHideFlags: 0
@@ -1445,9 +1475,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3c3e661807f748a39e4f9094a7f52c97, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _startGame: {fileID: 1351076932}
-  _settings: {fileID: 862980829}
-  _credits: {fileID: 1420866399}
+  <StartGameButton>k__BackingField: {fileID: 1351076932}
+  <SettingsButton>k__BackingField: {fileID: 862980829}
+  <CreditsButton>k__BackingField: {fileID: 1420866399}
 --- !u!1 &1857798456
 GameObject:
   m_ObjectHideFlags: 0

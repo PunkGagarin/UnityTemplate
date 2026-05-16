@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4bd85fe7205c41fd9aa25ae0057ddf13, type: 3}
+  m_Name: windowConfig
+  m_EditorClassIdentifier: Assembly-CSharp::_Project.Scripts.Gameplay.Windows.Configs.WindowsConfig
+  <WindowConfigs>k__BackingField:
+  - <Id>k__BackingField: 0
+    <Prefab>k__BackingField: {fileID: 6467781491178413794, guid: 9f1ae49cfb0504695963d18f16778e73, type: 3}
+  - <Id>k__BackingField: 1
+    <Prefab>k__BackingField: {fileID: 7082749286263119873, guid: 046b26516a8d97c40ba593ca13c6e885, type: 3}

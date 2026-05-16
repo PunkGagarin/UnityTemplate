@@ -37,9 +37,6 @@ namespace _Project.Scripts.Audio.Domain
 
         public void AttachView(SettingsView view)
         {
-            if (_settingsView != null)
-                return;
-
             _settingsView = view;
             SyncWithView();
         }

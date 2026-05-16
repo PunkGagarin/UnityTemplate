@@ -107,7 +107,6 @@ MonoBehaviour:
   - {fileID: 2632077510728045438}
   - {fileID: 2709071268093058265}
   - {fileID: 6909934021187158411}
-  - {fileID: 7559507918556738560}
   _installerPrefabs: []
   _parentNewObjectsUnderContext: 0
   _editorReflectionBakingCoverageMode: 0
@@ -344,7 +343,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fd27af71cbf147a5a183ede572ff0e42, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::_Project.Scripts.Audio.Domain.SettingsInstaller
-  _settingsView: {fileID: 5785073467324276276}
 --- !u!1001 &2784238114360880818
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -436,6 +434,10 @@ PrefabInstance:
     - target: {fileID: 6467781491178413794, guid: 9f1ae49cfb0504695963d18f16778e73, type: 3}
       propertyPath: m_Name
       value: SettingsView
+      objectReference: {fileID: 0}
+    - target: {fileID: 6467781491178413794, guid: 9f1ae49cfb0504695963d18f16778e73, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

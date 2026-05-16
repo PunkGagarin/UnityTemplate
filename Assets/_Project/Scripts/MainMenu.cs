@@ -1,8 +1,7 @@
 ﻿using _Project.Scripts.Audio.Domain;
-using _Project.Scripts.Audio.View;
+using _Project.Scripts.Gameplay.Windows;
 using _Project.Scripts.Infrastructure.GameStates;
 using _Project.Scripts.Infrastructure.GameStates.States;
-using _Project.Scripts.Infrastructure.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
 using Zenject;
@@ -11,34 +10,31 @@ namespace _Project.Scripts
 {
     public class MainMenu : MonoBehaviour
     {
-        [SerializeField]
-        private Button _startGame;
+        [field: SerializeField]
+        private Button StartGameButton { get; set; }
 
-        [SerializeField]
-        private Button _settings;
+        [field: SerializeField]
+        private Button SettingsButton { get; set; }
 
-        [SerializeField]
-        private Button _credits;
+        [field: SerializeField]
+        private Button CreditsButton { get; set; }
 
-
-        [Inject] private SceneLoader _sceneLoader;
         [Inject] private GameStateMachine _stateMachine;
         [Inject] private AudioService _audio;
-        [Inject] private SettingsView _settingsView;
-
+        [Inject] private IWindowService _windowService;
 
         private void Awake()
         {
-            _startGame.onClick.AddListener(StartGame);
-            _settings.onClick.AddListener(OpenSettings);
-            _credits.onClick.AddListener(OpenCredits);
+            StartGameButton.onClick.AddListener(StartGame);
+            SettingsButton.onClick.AddListener(OpenSettings);
+            CreditsButton.onClick.AddListener(OpenCredits);
         }
 
         private void OnDestroy()
         {
-            _startGame.onClick.RemoveListener(StartGame);
-            _settings.onClick.RemoveListener(OpenSettings);
-            _credits.onClick.RemoveListener(OpenCredits);
+            StartGameButton.onClick.RemoveListener(StartGame);
+            SettingsButton.onClick.RemoveListener(OpenSettings);
+            CreditsButton.onClick.RemoveListener(OpenCredits);
         }
 
         private void StartGame()
@@ -49,11 +45,13 @@ namespace _Project.Scripts
 
         private void OpenSettings()
         {
-            _settingsView.Open();
+            _audio.PlaySound(Sounds.buttonClick);
+            _windowService.Open(WindowId.SettingsWindow);
         }
 
         private void OpenCredits()
         {
+            _audio.PlaySound(Sounds.buttonClick);
         }
     }
 }

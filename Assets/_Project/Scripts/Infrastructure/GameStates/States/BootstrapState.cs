@@ -16,7 +16,7 @@ namespace _Project.Scripts.Infrastructure.GameStates.States
             // init all project context systems
 
             _audioService.Init();
-            _gameStateMachine.Enter<MainMenuState>();
+            _gameStateMachine.Enter<LoadMainMenuState>();
         }
 
         public void Exit()

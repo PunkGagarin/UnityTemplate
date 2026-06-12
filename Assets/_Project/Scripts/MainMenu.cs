@@ -52,6 +52,7 @@ namespace _Project.Scripts
         private void OpenCredits()
         {
             _audio.PlaySound(Sounds.buttonClick);
+            _windowService.Open(WindowId.CreditsPopupWindow);
         }
     }
 }

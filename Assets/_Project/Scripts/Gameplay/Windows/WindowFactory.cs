@@ -24,7 +24,27 @@ namespace _Project.Scripts.Gameplay.Windows
             if (_uiRoot == null)
                 throw new InvalidOperationException("UIRoot is not set. Add UIInitializer to the scene before opening windows.");
 
-            return _instantiator.InstantiatePrefabForComponent<BaseWindow>(PrefabFor(windowId), _uiRoot);
+            BaseWindow window = _instantiator.InstantiatePrefabForComponent<BaseWindow>(PrefabFor(windowId), _uiRoot);
+            StretchToUIRoot(window);
+            window.gameObject.SetActive(true);
+
+            return window;
+        }
+
+        private static void StretchToUIRoot(BaseWindow window)
+        {
+            RectTransform rectTransform = window.GetComponent<RectTransform>();
+
+            if (rectTransform == null)
+                return;
+
+            rectTransform.localScale = Vector3.one;
+            rectTransform.localRotation = Quaternion.identity;
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.anchoredPosition = Vector2.zero;
+            rectTransform.sizeDelta = Vector2.zero;
         }
 
         private GameObject PrefabFor(WindowId windowId)

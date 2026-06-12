@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Language LANG="Russian" ID="0">
+  <text key="MAIN_MENU_TITLE">Отличная игра</text>
+  <text key="MAIN_MENU_START_GAME">Начать игру</text>
+  <text key="MAIN_MENU_SETTINGS">Настройки</text>
+  <text key="MAIN_MENU_CREDITS">Разработчики</text>
+  <text key="PAUSE_POPUP_RETURN_TO_GAME">Вернуться в игру</text>
+  <text key="PAUSE_POPUP_RETURN_TO_MAIN_MENU">Вернуться в меню</text>
+  <text key="PAUSE_POPUP_SETTINGS">Настройки</text>
+  <text key="PAUSE_POPUP_TITLE">Пауза</text>
+  <text key="CREDITS_POPUP_TITLE">Авторы</text>
+  <text key="CREDITS_POPUP_DESC">@punkgagarin - гейм дизайн%%@NomaHs_Arts - художник%%@LudensCoder - программист%%@mad_yaoke - программист</text>
+  <text key="CREDITS_POPUP_CLOSE">Закрыть</text>
+  <text key="SETTINGS_AUDIO_TITLE">Аудио</text>
+  <text key="SETTINGS_AUDIO_MASTER_TITLE">Мастер</text>
+  <text key="SETTINGS_AUDIO_SFX_TITLE">Sfx</text>
+  <text key="SETTINGS_AUDIO_MUSIC_TITLE">Музыка</text>
+  <text key="SETTINGS_LANG_TITLE">Выбрать язык</text>
+  <text key="SETTINGS_LANG_RU">Русский</text>
+  <text key="SETTINGS_LANG_EN">English</text>
+  <text key="SETTINGS_CANCEL">Отмена</text>
+  <text key="SETTINGS_OK">Применить</text>
+</Language>

@@ -1,0 +1,21 @@
+Ключ,Russian,English
+MAIN_MENU_TITLE,Отличная игра,Отличная игра
+MAIN_MENU_START_GAME,Начать игру,Start Game
+MAIN_MENU_SETTINGS,Настройки,Settings
+MAIN_MENU_CREDITS,Разработчики,Credits
+PAUSE_POPUP_RETURN_TO_GAME,Вернуться в игру,Return to game
+PAUSE_POPUP_RETURN_TO_MAIN_MENU,Вернуться в меню,Return to menu
+PAUSE_POPUP_SETTINGS,Настройки,Settings
+PAUSE_POPUP_TITLE,Пауза,Paused
+CREDITS_POPUP_TITLE,Авторы,Credits
+CREDITS_POPUP_DESC,@punkgagarin - гейм дизайн%%@NomaHs_Arts - художник%%@LudensCoder - программист%%@mad_yaoke - программист,@punkgagarin - Game Design%%@NomaHs_Arts - artist%%@LudensCoder - programmer%%@mad_yaoke - programmer
+CREDITS_POPUP_CLOSE,Закрыть,Close
+SETTINGS_AUDIO_TITLE,Аудио,Audio
+SETTINGS_AUDIO_MASTER_TITLE,Мастер,Master
+SETTINGS_AUDIO_SFX_TITLE,Sfx,Sfx
+SETTINGS_AUDIO_MUSIC_TITLE,Музыка,Music
+SETTINGS_LANG_TITLE,Выбрать язык,Select language
+SETTINGS_LANG_RU,Русский,Русский
+SETTINGS_LANG_EN,English,English
+SETTINGS_CANCEL,Отмена,Cancel
+SETTINGS_OK,Применить,Apply

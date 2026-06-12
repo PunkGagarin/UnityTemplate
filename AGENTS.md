@@ -2,9 +2,37 @@
 
 This file provides guidance to Codex and other coding agents when working with code in this repository.
 
+## Operational Gates
+
+Before gameplay code changes, write this ownership map in the working update:
+
+```text
+Behavior:
+Owner:
+Caller:
+Why not service/root:
+```
+
+Do not edit until ownership is clear. If you cannot name the owning component,
+do not put the behavior in a service yet. Run these gates before code changes:
+
+- Existing project first: check `AGENTS.md` and current `Assets/_Project`; Petri Core code and approved deviations win over `ecs-survivors`.
+- User-facing implementation plans should be written in Russian by default unless the user asks for another language.
+- Ownership: object-local behavior goes to focused components; cross-object coordination, input, spawning, cleanup, lifecycle, and active loops go to state-owned services/states.
+- Root object: runtime roots are facades only. Key entity scripts must not own behavior logic, including validation, ownership changes, geometry, state mutation, spawn/pool reset, or collection cleanup; they only expose facade methods/properties and pass ticks to focused components. Gameplay object components must own a domain behavior or pure visual behavior; do not add MVP-style Presenter/Controller/View/ViewModel layers to runtime gameplay objects. Use gameplay names like `Visual`, `Line`, `Indicator`, or `Feedback` for pure visuals. Different unit/enemy behavior should be a prefab component variant, not a config bool in a shared component.
+- Reuse: search for similar components/interfaces before adding object-local logic. Prefer a reusable component over a per-entity duplicate whenever the behavior shape matches.
+- Public API: after component extraction, search callers for every new or changed public method/property/event. Delete unused facade/component members, or narrow visibility when only same-assembly components call them.
+- Event/update: use events/subscriptions/explicit calls for discrete changes; use `Update` only for continuous work.
+- Static state: avoid mutable runtime `static` state. If a static event, cache, counter, buffer, or collection is required, add an explicit `[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]` reset so Enter Play Mode without domain reload starts cleanly.
+- Lifecycle: states decide when; services know how.
+- Unity assets: keep `.meta` files, preserve GUIDs, update prefabs/scenes for serialized fields/components.
+- Localization: every new player-facing text, and every discovered existing text without localization, must be added through the localization flow. Use `ToLocalize` on static text components, `LocalizationTool`/localized keys for dynamic strings, update `Assets/_Project/Resources/LocalizationFile/localization.csv`, and regenerate/update the Russian and English XML language files.
+- Docs: update `PetriCore_GDD.md` for player-facing rules; update `PetriCore_BALANCE.md` for concrete numbers; update `Spawn.md` for level spawn tables whenever `LevelCatalogConfig` waves change; update `Pacing.md` when spawn, currency rewards, level rewards, or upgrade costs/prerequisites change.
+- Validation: run available compile/static checks and report Unity Editor/manual validation gaps.
+
 ## Project
 
-Unity template project built with Unity `6000.4.4f1` + URP. Infrastructure is the main focus; `Gameplay/Units` and `Gameplay/Enemies` are minimal example features used to exercise lifecycle and DI patterns.
+Petri Core is a Unity project built with Unity `6000.4.4f1` + URP. Game design is documented in [PetriCore_GDD.md](PetriCore_GDD.md), concrete gameplay numbers and tuning tables live in [PetriCore_BALANCE.md](PetriCore_BALANCE.md), level spawn tables live in [Spawn.md](Spawn.md), and progression pacing lives in [Pacing.md](Pacing.md). Infrastructure is still template-derived; `Gameplay/Units` and `Gameplay/Enemies` are minimal example features used to exercise lifecycle and DI patterns until production gameplay replaces them.
 
 ## Build & Run
 
@@ -12,10 +40,12 @@ This is a Unity project - there is no CLI build command. Open in Unity `6000.4.4
 
 No project-owned automated tests exist under `Assets/_Project`. Manual validation is done by running the game in the Editor.
 
+Do not run `dotnet build`, MSBuild, or generated solution/project builds as routine validation for this Unity project. They are not the project-owned build path and may fail because the local environment lacks a .NET SDK/MSBuild or Unity-generated references. Use Unity Editor validation when available; otherwise use focused static checks/searches and report the Unity/manual validation gap. Only run CLI solution builds when the user explicitly asks for them or a Unity-compatible build pipeline has been confirmed.
+
 ## Repository Rules
 
 - Keep Unity `.meta` files together with their assets and scripts.
-- Do not edit generated folders: `Library`, `Temp`, `Obj`, `Logs`, `UserSettings`, `.vs`, or IDE caches.
+- Do not edit generated folders: `Library`, `Temp`, `Obj`, `Logs`, `UserSettings`, `.vs`, `.idea`, or IDE caches.
 - Avoid editing generated solution/project files (`*.sln`, `*.csproj`) unless the task explicitly requires it.
 - Prefer changes inside `Assets/_Project` for project code. Treat `Assets/Plugins`, `Assets/NaughtyAttributes`, `Assets/TextMesh Pro`, and imported packages as vendor code unless asked otherwise.
 - Do not revert unrelated local changes. This repository may contain user, IDE, or Unity-generated changes in progress.
@@ -24,190 +54,67 @@ No project-owned automated tests exist under `Assets/_Project`. Manual validatio
 
 ### Lifecycle reference lock
 
-Lifecycle, state machine, DI, scene loading, UI flow, and gameplay loop work is reference-locked to `ecs-survivors`.
-Resolve its local path from `REFERENCES.local.md` first when present, otherwise from `REFERENCES.md`.
-If neither file contains a valid local path, ask the user for the current `ecs-survivors` checkout path before doing lifecycle work.
+Petri Core implementation is the first source of truth. Use `ecs-survivors`
+only for new lifecycle/state machine/DI/scene/UI flow decisions not already
+covered locally, or when explicitly asked to compare. Resolve its path from
+`REFERENCES.local.md`, then `REFERENCES.md`; ask if neither has a valid path.
 
-Implemented UnityTemplate architecture is the first source of truth. When a rule, pattern, or working example already exists in `AGENTS.md` or `Assets/_Project`, follow this project even if it intentionally differs from `ecs-survivors`.
+Lifecycle rules:
+- UI may call `GameStateMachine.Enter(...)` or `IWindowService.Open(...)`, and may query UI-facing services/static data.
+- UI must not call `SceneLoader` directly or start/stop/tick/clean gameplay services.
+- Runtime gameplay/meta changes from UI go through high-level feature/domain services.
+- Loading states load scenes; enter/setup states prepare runtime objects; active states tick, exit, and clean up.
+- `GameStateMachine` resolves Zenject-bound states through `IStateFactory`; bind states in `ProjectInstaller`.
+- DI wires objects but does not decide when gameplay starts.
+- Scene initializers write scene references into concrete providers/services.
+- Do not add flow services, gameplay runtime/session wrappers, lifecycle registries, or presenter/controller flow layers unless explicitly requested.
+- Gameplay/meta choice UI currently uses MVP direct service calls, not request queues.
 
-Use `ecs-survivors` only for new architecture/lifecycle decisions that are not already described or exemplified in UnityTemplate, or when the user explicitly asks to compare with the reference. Do not "correct" user-approved UnityTemplate deviations back to `ecs-survivors` unless the user asks to revisit that decision.
-
-Before recommending, documenting, or implementing a new lifecycle pattern:
-
-1. Check `AGENTS.md` and existing UnityTemplate code first.
-2. If the pattern is not already covered locally, find the matching `ecs-survivors` class/file or concrete pattern.
-3. Map that pattern to this project without adding extra architectural layers.
-4. If there is no matching pattern in `ecs-survivors`, label it as a new proposal and ask before adding it to docs or code.
-
-Reference-backed lifecycle rules:
-
-- UI may call `GameStateMachine.Enter(...)`, as in `HomeHUD` / `GameOverWindow` from `ecs-survivors`.
-- UI may query UI-facing gameplay/meta services and static data for display, as in `LevelUpWindow` and `ShopWindow`.
-- Current UnityTemplate decision: gameplay/meta choice UI uses MVP direct service calls for now, not request queues. This is a user-approved simplification from the `ecs-survivors` request-entity pattern.
-- UI must not call `SceneLoader.LoadScene(...)` or `SceneLoader.ReloadScene(...)` directly.
-- UI must not run gameplay cleanup or control gameplay service lifecycle. Opening/closing gameplay menu may toggle the high-level `PauseService`, but UI must not start, stop, tick, or clean individual gameplay services.
-- Runtime gameplay/meta changes from UI should go through high-level feature/domain services, not scattered low-level calls across multiple services.
-- Loading states own scene loading.
-- Enter/setup states prepare a mode after scene load.
-- Active states own update, exit, and cleanup.
-- `GameStateMachine` resolves states through `IStateFactory`, which resolves concrete state instances from Zenject, matching `ecs-survivors`.
-- Bind states in `ProjectInstaller`; do not manually register state instances into the state machine.
-- DI creates and wires objects, but does not decide when gameplay starts.
-- Scene initializers write concrete scene references into concrete providers/services.
-- Do not add flow services, gameplay runtime/session wrappers, generic scene scopes, lifecycle registries, or other lifecycle-owner abstractions unless the user explicitly asks for a separate proposal.
-- Do not add presenter/controller/flow layers as lifecycle intermediaries. Existing UI MVP code may stay where it is already part of the project.
-
-Reference map for common lifecycle/UI decisions:
-- `HomeHUD` backs scene HUD flow: UI button calls `IGameStateMachine.Enter(...)` or `IWindowService.Open(...)`.
-- `LoadingBattleState` backs loading-state ownership: loading state calls scene loader, then enters setup state.
-- `BattleEnterState` backs enter/setup ownership: setup state creates gameplay runtime objects, then enters active loop state.
-- `BattleLoopState` backs active loop ownership: active state receives ticks and owns exit cleanup.
-- `StateFactory` backs state resolution: state machine asks factory, factory resolves concrete states from Zenject.
-- `LevelInitializer` and `UIInitializer` back concrete scene references: scene objects write references into concrete providers/services.
-- `WindowService`, `WindowFactory`, `BaseWindow`, `WindowsConfig`, `GameOverWindow`, and `GameOverState` back dynamic window flow.
-- `LevelUpWindow`, `ShopWindow`, `UpgradeAbilityOnRequestSystem`, and `BuyItemOnRequestSystem` are the reference for request-based gameplay/meta choice UI, but request transport is deferred in this template.
-
-Reference-backed asset and prefab rules:
-
-- Runtime prefab creation from gameplay states/factories is part of lifecycle and DI work. It must be checked against the full `ecs-survivors` chain, not only against the final `IInstantiator` call.
-- The reference chain for gameplay views is: state/domain factory creates gameplay data with a resource path, `IAssetProvider` loads from `Resources`, and a view factory instantiates with Zenject `IInstantiator`.
-- Do not replace this with serialized gameplay prefab fields on `ProjectInstaller` unless `ecs-survivors` has the same pattern for that case, or the user explicitly approves it as a new proposal.
-- A partial API match is not enough. If only `InstantiatePrefabForComponent(...)` matches but asset ownership/loading differs, call it out as a mismatch before changing code or docs.
-- Do not copy ECS-only service dependencies such as `GameEntity`, generated contexts, or `ICollisionRegistry` into this template. When a reference service depends on ECS, keep only the lifecycle/DI placement and adapt the service API to Unity-neutral types.
-
-Service lifecycle rule:
-
-```text
-State decides when.
-Service knows how.
-```
-
-If a service is passive, do not add lifecycle methods to it. If a service owns subscriptions, timers, spawn loops, input modes, async tasks, or update work, expose explicit methods such as `Start`, `Stop`, `Enable`, `Disable`, `Update`, or `Cleanup`, and call them from the owning state.
+Prefab rules:
+- Runtime prefab flow is `Resources` path -> `IAssetProvider` -> Zenject `IInstantiator`.
+- Do not replace runtime prefab loading with serialized `ProjectInstaller` prefab fields without explicit approval.
+- Do not copy ECS-only dependencies from `ecs-survivors`; adapt only lifecycle/DI placement.
 
 ### Architecture workflow
 
 - `AGENTS.md` is the source of truth for current architecture rules.
-- `LIFECYCLE_MIGRATION_PLAN.md` is a historical migration/audit log, not the active task plan. Do not add new work there unless the user explicitly reopens migration planning.
 - Keep new or undocumented lifecycle decisions reference-backed by `ecs-survivors`; if a needed decision is neither covered locally nor reference-backed, stop and present it as a separate proposal.
 - After each architecture/lifecycle/UI/DI slice, check whether `AGENTS.md` still matches the implemented architecture. Update it before the final response if current flow, state registration, lifecycle rules, or project conventions changed.
+- Every time code adds gameplay, content, UI behavior, player-facing rules, or other design-relevant behavior that is not already described in `PetriCore_GDD.md`, update the GDD in the same task before the final response. Keep concrete gameplay numbers out of the GDD; if the change adds or changes balance values, update `PetriCore_BALANCE.md` instead or alongside the GDD. If the change touches `LevelCatalogConfig` waves, update `Spawn.md` as the only detailed spawn-table document and `Pacing.md` if rewards/progression expectations change. Pure infrastructure refactors that do not change design or player-facing behavior do not require GDD or balance-document updates.
 
 ### Layer structure
 
-```
-Assets/_Project/Scripts/
-├── Gameplay/         # Game features, one subfolder per feature
-│   ├── Cameras/      # Camera provider and camera-facing gameplay helpers
-│   ├── Common/       # Small common gameplay services: time, random, physics
-│   ├── Enemies/      # Minimal enemy feature: view, factory, spawner service
-│   ├── Level/        # Concrete scene references and providers
-│   ├── Units/        # Example gameplay feature folder
-│   └── Windows/      # Dynamic window infrastructure and window configs
-├── Infrastructure/   # App lifecycle: GameRunner, StateMachine, States, SceneManagement
-├── GameplayData/     # ScriptableObject repositories and base Definitions
-├── Audio/            # Audio subsystem: Domain/, Data/, View/
-├── Localization/     # EN/RU via XML
-├── MainMenu.cs       # Main menu UI entry script
-├── Restart.cs        # Example restart/menu UI script
-└── Utils/            # ContentUi helper, Pause service, Editor tools
-```
+Prefer project code under `Assets/_Project/Scripts`. Main areas: `Gameplay/` for
+features, `Infrastructure/` for app lifecycle/state machine/scene loading,
+`GameplayData/` for repositories/definitions, plus `Audio/`, `Localization/`,
+`MainMenu/`, and `Utils/`. Runtime object feature folders keep focused
+components in a `Components/` subfolder.
 
 ### Core patterns
 
-**State Machine** controls game flow. States live in `Infrastructure/GameStates/States/`. Current flow is `BootstrapState -> LoadMainMenuState -> MainMenuState -> LoadGameplayState -> GameplayEnterState -> GameplayState`. `GameplayPauseState` and `GameOverOrParagonState` are registered lifecycle states for later transitions. Do not enter `GameplayPauseState` for the gear menu until `GameplayState` has explicit suspend/resume semantics; a normal state transition out of `GameplayState` runs cleanup.
+Detailed flow notes live in [PetriCore_ARCHITECTURE.md](PetriCore_ARCHITECTURE.md).
+Keep `AGENTS.md` operational and update the architecture notes when current flow changes.
 
-Each state implements `IState, IGameState` directly or inherits a base state that does. Bind every lifecycle state in `ProjectInstaller` with self binding, resolve states through `IStateFactory`, transition with `_stateMachine.Enter<SomeState>()`, and keep scene loading inside loading states.
-
-`GameplayEnterState` owns the current example gameplay setup: it reads `ILevelStartPointProvider.StartPoint`, calls `IExampleUnitFactory.Create(...)`, then enters `GameplayState`. `ExampleUnitFactory` follows the reference-backed prefab flow: `Resources` path `Gameplay/Units/ExampleUnit` -> `IAssetProvider` -> Zenject `IInstantiator`, mirroring `HeroFactory.AddViewPath("Gameplay/Hero/hero")` and `EntityViewFactory.CreateViewForEntity(...)` in `ecs-survivors`. `GameplayState` inherits `EndOfFrameExitState`; it starts/ticks/cleans active gameplay services such as `IEnemySpawner`, skips gameplay ticks while `PauseService.IsPaused`, and its `ExitOnEndOfFrame()` calls cleanup for state-owned runtime objects. `EnemyFactory` follows the same prefab flow with `Resources` path `Gameplay/Enemies/EnemyUnit`. `EnemySpawner` reads tunable numeric values from injected `EnemySpawnerConfig`, which is assigned in `GlobalConfigInstaller`. Do not use serialized gameplay prefab fields on `ProjectInstaller` for runtime gameplay prefabs unless explicitly approved as a new proposal. `GameplaySceneInitializer` writes the `MainCamera` and `GameplayStartPoint` scene references into `CameraProvider` and `LevelStartPointProvider`.
-
-Scene initializers that implement Zenject interfaces must be listed in `SceneInitializationInstaller` on the scene `SceneContext`, matching the `ecs-survivors` pattern.
-
-**Window Flow** follows the reference-backed dynamic window path:
-`WindowService.Open(WindowId)` -> `WindowFactory.CreateWindow(...)` ->
-`WindowsConfig` prefab lookup at `Resources/Configs/Windows/windowConfig` ->
-Zenject `IInstantiator` under the scene `UIRoot`. `UIInitializer` writes the
-scene `Canvas`/`UIRoot` into `WindowFactory` through `SceneInitializationInstaller`.
-`SettingsView` is now a `BaseWindow` opened by `MainMenu` through
-`WindowService.Open(WindowId.SettingsWindow)`. In `Gameplay`, the scene-owned
-HUD `GearButton` sets `PauseService.SetPaused(true)` and opens the dynamic
-`WindowId.GameplayMenuWindow`; `Restart` backs that gameplay menu modal and
-unpauses before close/restart/main-menu actions. This is not a result/game-over
-window, and `GameOverOrParagonState` must not open it unless explicitly
-redesigned. Do not inject concrete windows such as `SettingsView` directly into
-menu UI.
-
-**Gameplay Menu Pause** is not a `GameplayPauseState` transition yet.
-`GearButton -> PauseService.SetPaused(true) -> WindowService.Open(WindowId.GameplayMenuWindow)`.
-`Close`, `Restart`, and `MainMenu` actions must unpause first; loading states
-also reset pause as a safety measure. `GameplayState` skips active gameplay
-ticks while `PauseService.IsPaused`, but keeps state-owned runtime objects alive.
-
-**Zenject DI** wires dependencies. No `new SomeService()` for DI-owned services - bind them in installers and inject them. `IInitializable` is allowed for local setup, UI presenters, settings, cached references, and other non-flow initialization. Do not use `IInitializable` to enter gameplay states, load gameplay scenes, or start active gameplay loops.
-
-**Config Assets vs Prefab Registries** are intentionally different. Value/config
-assets with gameplay or settings numbers should be assigned in installers,
-bound with `FromInstance(...)`, and injected; `EnemySpawnerConfig` is the current
-example. Dynamic prefab registries that map ids to prefabs may stay
-resource-backed, matching `ecs-survivors` `WindowsConfig`/`StaticDataService`
-lookup. `WindowsConfig` is a prefab registry, not a numeric settings config.
-When adding a new value config, create the asset under `Assets/_Project/Data/Config`,
-add a serialized auto-property to `GlobalConfigInstaller`, bind it with
-`FromInstance(...)`, and inject the config into the owning service.
-
-Three installer types:
-- `MonoInstaller` - scene-bound, serialized fields for Unity references
-- `ScriptableObjectInstaller` - asset-based config (e.g. `GlobalConfigInstaller`)
-- Installers in `ProjectContext` apply project-wide; scene `GameObjectContext`/`SceneContext` are local
-
-**MVP** used for UI: `Model` (data + PlayerPrefs), `Presenter` (`IInitializable`, UI/local logic), `View` (MonoBehaviour, UI only). See `Audio/` for the canonical example. Presenters must not become lifecycle intermediaries for gameplay flow.
-
-**Gameplay choice UI** uses MVP direct service calls for now. Presenters/windows may read display data from services/static data and may call high-level feature/domain methods such as `BuyItem(id)`, `SelectUpgrade(id)`, or `ApplyChoice(id)` directly. Keep the operation encapsulated in one owning service; do not spread one UI click across low-level calls such as `RemoveGold`, `AddPurchasedItem`, `ApplyBoost`, and `SaveProgress` from the presenter. The `ecs-survivors` request pattern (`UpgradeRequest`/`BuyRequest` entities processed later by systems) is documented as a deferred option, not the current default.
-
-**Deferred request transport** may be reconsidered later if direct service calls cause real problems: multiple UI entry points apply the same effect differently, strict ordering inside the active gameplay/meta loop matters, close/pause/state transitions conflict with direct calls, or choices need to be logged/tested separately from their effects. If this returns, do not add an abstract event bus by default; model it as a named request transport owned by the feature, then process it from the owning gameplay/meta loop.
-
-**Repositories** - inherit `Repository<T> : ScriptableObject` where `T : Definition` for any game data. Bind with `FromInstance()` in an installer.
-
-**UniTask** for all async and time-based operations. Coroutines are **never** used, including Unity yield instructions such as `WaitForSeconds`, `UnityEngine.WaitUntil`, and similar. Use `UniTask.Delay`, `UniTask.WaitUntil`, `async UniTaskVoid` instead. This applies to all code: MonoBehaviour components, services, states.
-
-**Component-based approach** - runtime Unity objects are built from small `MonoBehaviour` components. One responsibility equals one component. Dependencies between gameplay components should use `[SerializeField]` or `GetComponent`, not Zenject. State-owned lifecycle helpers such as factories and spawners can be plain DI services that are started, updated, and cleaned by states.
+- State flow is `Bootstrap -> MainMenu -> GameplayEnter -> GameplayLoop`; terminal transitions go to game-over or level-complete states/windows.
+- `GameplayLoopState` owns active service ticking/fixed-ticking/cleanup and skips gameplay ticks while paused.
+- Runtime prefab flow is `Resources` path -> `IAssetProvider` -> Zenject `IInstantiator`; runtime objects belong under gameplay scene hierarchy.
+- Battle molecule ownership: `BattleMoleculeFactory` only creates molecule prefabs; `BattleMoleculeService` owns the registered molecule list, subscriptions, ticking, active selection, active feed target provider, and cleanup; `AtomCoreService` ticks core runtime behavior; `AtomCoreConnectionAtomFlow` coordinates core-owned connection atom flow, `AtomCoreConnectionAtomSource` selects startable core atoms, and `AtomCoreConnectionAtomMotion` owns flow movement/geometry until delivery to a molecule receiver.
+- Gameplay tutorial ownership: `GameplayTutorialService` owns tutorial progress, UI overlay spawning, and subscriptions to core/molecule/enemy events; `GameplayLoopState` starts/ticks/cleans it with active gameplay services. Tutorial view is a prefab under gameplay UI resources and receives UI elements through serialized fields.
+- Enemy ownership: `EnemyService` coordinates enemy waves, active enemy ticking, enemy selection for area pushes, and boss-kill notification; `MergeEnemyService` owns enemy merge-pair checks, merge links/groups, tether ticking, death-wave progression, and merge cleanup, while `GameplayLoopState` starts/cleans it; `EnemySpawner` creates; `EnemyUnit` is a facade over identity/vitality/merge/lifecycle/runtime-behavior/knockback components; `EnemyKillRewardService` owns non-boss kill subscriptions, kill-reward economy rules, and reward cleanup; `EnemyProjectileService` owns enemy projectile spawning/ticking/cleanup; `CurrencyPickupService` owns physical currency pickup spawning/collection. Enemy components own enemy-local behavior, `EnemyKnockback` owns enemy-local push displacement, `MassEnemyArcMovement` is the mass-enemy movement variant, `RangedEnemyStopMovement`/`RangedEnemyAttack` are ranged-enemy local variants, and `BossCoreCollision` is the boss one-shot variant.
+- UI may call state/window services, but must not load scenes or control gameplay service lifecycle. Gameplay menu pause is not a `GameplayPauseState` transition yet.
+- Dynamic windows opened through `IWindowService` use the shared modal backdrop from `WindowFactory`; backdrop color is configured in `WindowsConfig`, while outside-click dismissal belongs in the owning window's `OnBackdropClicked()` override.
+- Zenject wires dependencies; do not `new` DI-owned services. `IInitializable` must not enter states, load scenes, or start gameplay loops.
+- MVP UI may call high-level feature/domain services directly; keep each operation encapsulated in one owning service.
+- Use UniTask for async/time-based work. Coroutines and Unity yield instructions are never used.
 
 ### Adding new things
 
-**New gameplay feature:**
-1. Create a `Gameplay/FeatureName/` folder.
-2. Put runtime object behavior into focused `MonoBehaviour` components.
-3. Put factories/spawners/lifecycle helpers in the same feature folder as plain DI services when a state owns their lifecycle.
-4. If the feature needs ScriptableObject data, create a `GameplayData/Definitions/FeatureName/` folder.
-
-**New service:**
-1. Define the interface beside the feature/service implementation, or in the relevant `Domain/` folder for subsystems that already use one.
-2. Implement the class.
-3. Bind in an installer with `Container.Bind<IMyService>().To<MyService>().AsSingle()` or `Container.BindInterfacesAndSelfTo<MyService>().AsSingle()` when self binding is also needed.
-4. If the service has active lifecycle, call its explicit lifecycle methods from a state.
-5. Inject via `[Inject]`.
-
-**New value config:**
-1. Create a `ScriptableObject` config with serialized auto-properties.
-2. Place the asset in `Assets/_Project/Data/Config`.
-3. Add it to `GlobalConfigInstaller` as a serialized auto-property.
-4. Bind it with `FromInstance(...)` through the shared config binding helper.
-5. Inject it into the service that owns the behavior.
-
-**New prefab registry:**
-1. Use this only for dynamic prefab lookup by id/path, not for gameplay tuning numbers.
-2. Keep it resource-backed when it mirrors `WindowsConfig`/`StaticDataService` from `ecs-survivors`.
-3. Document the lookup path and keep every enum id mapped to a prefab.
-
-**New game state:**
-1. `public class MyState : IState, IGameState`
-2. Implement `Enter()` and `Exit()`
-3. Implement update only when the state owns an active loop
-4. Add `Container.BindInterfacesAndSelfTo<MyState>().AsSingle()` in `ProjectInstaller`
-5. Transition: `_stateMachine.Enter<MyState>()`
-
-**New gameplay data:**
-1. `public class MyDef : Definition { }`
-2. `public class MyRepo : Repository<MyDef> { }` with `[CreateAssetMenu]`
-3. Bind in `RepositoryInstaller`
+- New gameplay feature: create `Gameplay/FeatureName/`; put object-local behavior in focused components; put input, timers, spawning, cleanup, resource/progress changes, and cross-object coordination in a plain DI service ticked by the owning state.
+- New service: define interface beside the implementation, bind it in an installer, inject with `[Inject]`, and expose explicit lifecycle methods only when a state owns them.
+- New value config: create a `ScriptableObject` with serialized auto-properties under `Assets/_Project/Data/Config`, add it to `GlobalConfigInstaller`, bind with `FromInstance(...)`, and inject it into the owning service.
+- New prefab registry: use only for dynamic id/path prefab lookup, not tuning values; document the lookup path and keep enum ids mapped.
+- New game state: implement `IState, IGameState`, bind with `Container.BindInterfacesAndSelfTo<MyState>().AsSingle()`, and transition through `_stateMachine.Enter<MyState>()`.
+- New gameplay data: inherit `Definition`, store in a `Repository<T>`, and bind in `RepositoryInstaller`.
 
 ## Coding conventions
 
@@ -221,7 +128,9 @@ Three installer types:
 
 - Use field injection for Zenject dependencies. Prefer `[Inject] private SomeService _service;` over constructor injection.
 - Use serialized auto-properties for inspector-exposed fields: `[field: SerializeField] private GameObject Obj { get; set; }`. Do not add new `[SerializeField] private GameObject _obj;` fields.
+- ScriptableObject configs with multiple semantic groups must use editor-friendly `[field: Header("...")]` sections with human-readable names.
 - When converting existing serialized fields to serialized auto-properties, update scene/prefab YAML references to the backing field name, for example `<Obj>k__BackingField`.
+- UI text must not be left as raw player-facing strings. Static `TextMeshProUGUI` labels use `ToLocalize` with a key; dynamic text uses localized format/name keys from `LocalizationTool`.
 - Prefer `List<T>` over arrays (`T[]`) where possible, including `[field: SerializeField]` collections
 - For new files, prefer usings grouped as System -> UnityEngine -> third-party -> project. In existing files, keep the surrounding order unless the file is already being cleaned up.
 
@@ -229,14 +138,15 @@ Three installer types:
 
 - When possible, validate Unity changes by opening the project in Unity `6000.4.4f1`.
 - For code-only changes, at minimum check affected C# files for compile-time issues and keep scene/prefab references in sync.
-- If adding or moving Unity assets, ensure corresponding `.meta` files are present.
-- Current manual lifecycle/UI validation should include `MainMenu -> Settings -> Apply/Cancel`, `MainMenu -> Gameplay`, `GearButton -> GameplayMenuWindow -> Close`, `GearButton -> GameplayMenuWindow -> Restart`, and `GearButton -> GameplayMenuWindow -> MainMenu`.
-- Current gameplay validation should include `Bootstrap -> LoadMainMenuState -> MainMenuState -> LoadGameplayState -> GameplayEnterState -> GameplayState`, `ExampleUnit` creation at `GameplayStartPoint`, enemy spawning after first gameplay click, and cleanup when restarting or returning to main menu.
+- Do not attempt `dotnet build`/MSBuild as a fallback validation step for ordinary Unity code changes; prefer targeted static inspection and explicit manual validation notes unless the user asks for CLI build validation.
+- If adding or moving Unity assets, ensure corresponding `.meta` files are present and Unity-valid. Script `.cs.meta` files should contain a `MonoImporter` block, folder `.meta` files should contain `folderAsset: yes` and `DefaultImporter`, and new/moved prefabs or assets must keep stable GUID references. Prefer letting Unity generate or refresh these files when possible.
+- Current manual lifecycle/UI validation should include `MainMenu -> Settings -> Apply/Cancel`, `MainMenu -> Update -> TalentTreeWindow`, `MainMenu -> LevelSelector previous/next arrows`, `MainMenu -> Reset`, `MainMenu -> Gameplay`, `GearButton -> GameplayMenuWindow -> Close`, `GearButton -> GameplayMenuWindow -> Restart`, and `GearButton -> GameplayMenuWindow -> MainMenu`.
+- Current gameplay validation should include `Bootstrap -> LoadMainMenuState -> MainMenuState -> LoadGameplayState -> GameplayEnterState -> GameplayLoopState`, `AtomCore` creation at `GameplayStartPoint`, enemy spawning after first gameplay click, ranged enemy stop-and-shoot behavior, projectile damage absorption by membrane, non-boss enemy Nucleotids pickup spawn and hover collection, no boss currency pickup, `LevelProgressService` completion into `LevelCompleteState -> LevelCompleteWindow`, final-level completion into `LevelCompleteState -> GameCompleteWindow`, first-clear isotope reward persistence, no completion-isotope reward on replay, and cleanup when restarting or returning to main menu.
 
 ## Git Notes
 
 - Git may report `dubious ownership` in sandboxed environments. Use a per-command safe directory override when inspecting status:
-  `git -c safe.directory=F:/unity_personal/UnityTemplate status --short --branch`
+  `git -c safe.directory=<repo-root> status --short --branch`
 - Do not create commits, branches, stage files, or rewrite history unless the user asks for that explicitly.
 
 ## Key dependencies
